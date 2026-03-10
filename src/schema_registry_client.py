@@ -199,9 +199,18 @@ class SchemaRegistryClient:
         kek_name: str,
         subject: str,
         algorithm: str = "AES256_GCM",
+        encrypted_key_material: str | None = None,
     ) -> dict:
-        """POST /dek-registry/v1/keks/{name}/deks — create a Data Encryption Key."""
-        body = {"subject": subject, "algorithm": algorithm}
+        """POST /dek-registry/v1/keks/{name}/deks — create a Data Encryption Key.
+
+        Parameters
+        ----------
+        encrypted_key_material : str, optional
+            Base64-encoded ciphertext of the DEK, encrypted by the KEK via KMS.
+        """
+        body: dict[str, Any] = {"subject": subject, "algorithm": algorithm}
+        if encrypted_key_material:
+            body["encryptedKeyMaterial"] = encrypted_key_material
         result = self._post(f"/dek-registry/v1/keks/{kek_name}/deks", body)
         logger.info(f"  [DEK] Created DEK for subject='{subject}' under KEK '{kek_name}'")
         return result

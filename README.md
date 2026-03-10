@@ -19,6 +19,7 @@ cc-python-protobuf-csfle-example/
 │   ├── field_encryption.py          # FieldEncryptor & get_encrypted_fields() — AES-256-GCM CSFLE
 │   ├── demos.py                     # All nine demo functions (demo_basic … demo_csfle)
 │   └── main.py                      # Thin entry point — wires config, SR client, and demo dispatch
+├── run-all-demos.sh                 # Shell script — authenticates via AWS SSO and runs all demos in full mode
 ├── pyproject.toml                   # Project metadata, dependencies, logging, pytest config
 ├── uv.lock                          # Pinned dependency lockfile — commit this
 ├── .env                             # Credentials — NOT COMMITTED, loaded automatically by python-dotenv at startup
@@ -295,7 +296,7 @@ no `--env-file` flag is needed.
 | Kafka cluster | Any type — Basic, Standard, Dedicated, or Enterprise |
 | Kafka API key | `DeveloperRead` + `DeveloperWrite` on the cluster |
 | AWS KMS key | Symmetric encrypt/decrypt key — required for `--demo csfle` |
-| AWS credentials | `boto3`-compatible auth (env vars, `~/.aws/credentials`, or IAM role) |
+| AWS credentials | `boto3`-compatible auth (env vars, `~/.aws/credentials`, IAM role, or AWS SSO — see `run-all-demos.sh`) |
 
 ---
 
@@ -314,7 +315,29 @@ uv run python src/main.py --mode full --demo oneof
 
 # Pin a run-id to reuse existing topics/subjects across runs
 uv run python src/main.py --mode full --run-id abc12345
+
+# Run all demos in full mode with AWS SSO authentication
+./run-all-demos.sh --profile=<SSO_PROFILE_NAME>
 ```
+
+### `run-all-demos.sh` — One-command full run
+
+The `run-all-demos.sh` script automates AWS SSO authentication and runs every
+demo in `--mode full` with a single command:
+
+```bash
+./run-all-demos.sh --profile=<SSO_PROFILE_NAME>
+```
+
+It performs the following steps:
+1. Validates the `--profile` argument
+2. Authenticates via `aws sso login`
+3. Exports temporary AWS credentials using `aws2-wrap`
+4. Sets `AWS_REGION` from the profile's configured region
+5. Runs `uv run python src/main.py --mode full --demo all`
+
+**Prerequisites:** AWS CLI v2, `aws2-wrap` (`pip install aws2-wrap`), and a
+configured AWS SSO profile with access to the KMS key.
 
 ### Did you notice I prepended `uv run` to `python`?
 You maybe asking yourself why.  Well, `uv` is an incredibly fast Python package installer and dependency resolver, written in [**Rust**](https://github.blog/developer-skills/programming-languages-and-frameworks/why-rust-is-the-most-admired-language-among-developers/), and designed to seamlessly replace `pip`, `pipx`, `poetry`, `pyenv`, `twine`, `virtualenv`, and more in your workflows. By prefixing `uv run` to a command, you're ensuring that the command runs in an optimal Python environment.
@@ -455,6 +478,8 @@ used by `decode_header()` to skip the message-index varint array.
 | `get_versions_for_schema(id)` | `GET /schemas/ids/{id}/versions` |
 | `referenced_by(subject, version)` | `GET /subjects/{s}/versions/{v}/referencedby` |
 | `register(subject, schema, ...)` | `POST /subjects/{s}/versions` |
+| `create_dek(kek, subj, algo?, encrypted_key_material?)` | `POST /dek-registry/v1/keks/{name}/deks` |
+| `get_dek(kek, subject)` | `GET /dek-registry/v1/keks/{name}/deks/{subject}` |
 | `delete_version(subject, version)` | `DELETE /subjects/{s}/versions/{v}` |
 | `delete_subject(subject)` | `DELETE /subjects/{s}` *(soft)* |
 | `delete_subject_permanent(subject)` | `DELETE /subjects/{s}?permanent=true` |
@@ -521,8 +546,8 @@ encryption.
 encrypts/decrypts individual string field values. Uses the Confluent DEK
 Registry for DEK storage and AWS KMS for KEK management:
 
-1. **First encrypt** — `create_dek()` via DEK Registry returns plaintext DEK
-2. **Subsequent calls** — `get_dek()` returns encrypted DEK, decrypted via `boto3 kms.decrypt()`
+1. **First encrypt** — generates a 256-bit DEK locally, encrypts it via `kms.encrypt()`, then registers the encrypted key material with `create_dek()`
+2. **Subsequent calls** — `get_dek()` returns the encrypted DEK from the registry, decrypted via `boto3 kms.decrypt()`
 3. **DEKs are cached** in-process per subject to avoid repeated KMS calls
 
 Encrypted values use the envelope format:
@@ -535,6 +560,8 @@ base64-encoded before storage in the Protobuf string field.
 | `decrypt_value(encrypted, subject)` | Decrypt a base64 ciphertext → original string |
 | `encrypt_fields(data, fields, subject)` | Batch-encrypt named fields in a data dict |
 | `decrypt_fields(data, fields, subject)` | Batch-decrypt named fields in a data dict |
+| `_encrypt_dek_via_kms(plaintext_key)` | Encrypt a DEK via AWS KMS `kms.encrypt()` |
+| `_decrypt_dek_via_kms(encrypted_key)` | Decrypt a DEK via AWS KMS `kms.decrypt()` |
 
 ### `kafka_helpers.py`
 

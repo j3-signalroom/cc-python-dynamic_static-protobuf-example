@@ -104,11 +104,23 @@ class FieldEncryptor:
             encrypted_key = base64.b64decode(dek_info["encryptedKeyMaterial"])
             dek = self._decrypt_dek_via_kms(encrypted_key)
         except RuntimeError:
-            dek_info = self.sr.create_dek(self.kek_name, subject)
-            dek = base64.b64decode(dek_info["keyMaterial"])
+            # Generate a new 256-bit DEK, encrypt it via KMS, and register it.
+            dek = os.urandom(32)
+            encrypted_key = self._encrypt_dek_via_kms(dek)
+            encrypted_key_b64 = base64.b64encode(encrypted_key).decode("ascii")
+            dek_info = self.sr.create_dek(
+                self.kek_name, subject, encrypted_key_material=encrypted_key_b64,
+            )
 
         self._dek_cache[subject] = dek
         return dek
+
+    def _encrypt_dek_via_kms(self, plaintext_key: bytes) -> bytes:
+        """Encrypt a DEK using AWS KMS."""
+        import boto3
+        client = boto3.client("kms")
+        resp = client.encrypt(Plaintext=plaintext_key, KeyId=self.kms_key_id)
+        return resp["CiphertextBlob"]
 
     def _decrypt_dek_via_kms(self, encrypted_key: bytes) -> bytes:
         """Decrypt a DEK using AWS KMS."""
