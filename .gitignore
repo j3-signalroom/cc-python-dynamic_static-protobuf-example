@@ -15,3 +15,4 @@ wheels/
 *.csv
 .claude/
 schemas/
+scratch.pad

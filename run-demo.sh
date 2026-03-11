@@ -116,10 +116,20 @@ aws sso login $AWS_PROFILE
 eval $(aws2-wrap $AWS_PROFILE --export)
 export AWS_REGION=$(aws configure get region $AWS_PROFILE)
 
-# Run the main.py script with the specified mode, demo, save-schemas directory, and/or run-id
+# Run the demo script with the appropriate arguments based on the presence of optional arguments
 if [ -z "$run_id" ]
 then
-    uv run python src/main.py --mode $mode --demo $demo --save-schemas $save_schemas_dir
+    if [ -z "$save_schemas_dir" ]
+    then
+        uv run python src/main.py --mode $mode --demo $demo
+    else
+        uv run python src/main.py --mode $mode --demo $demo --save-schemas $save_schemas_dir
+    fi
 else
-    uv run python src/main.py --mode $mode --demo $demo --run-id $run_id --save-schemas $save_schemas_dir
+    if [ -z "$save_schemas_dir" ]
+    then
+        uv run python src/main.py --mode $mode --demo $demo --run-id $run_id
+    else
+        uv run python src/main.py --mode $mode --demo $demo --run-id $run_id --save-schemas $save_schemas_dir
+    fi
 fi
