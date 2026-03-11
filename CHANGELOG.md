@@ -12,6 +12,7 @@ The format is base on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), 
 ### Changed
 - Issue [`#25`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/25)
 - Issue [`#29`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/29)
+- Issue [`#31`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/31)
 
 ## [0.02.00.000] - 2026-03-11
 ### Added

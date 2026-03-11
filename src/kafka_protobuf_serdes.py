@@ -60,15 +60,6 @@ class KafkaProtobufSerializer:
             case _:
                 raise ValueError(f"Unknown SubjectNameStrategy: {self.subject_name_strategy}")
 
-    def _ref_subject(self, ref_name: str) -> str:
-        match self.ref_strategy:
-            case "DefaultReferenceSubjectNameStrategy":
-                return ref_name          # e.g. "other.proto"
-            case "QualifiedReferenceSubjectNameStrategy":
-                return ref_name.replace("/", ".").removesuffix(".proto")
-            case _:
-                raise ValueError(f"Unknown ReferenceSubjectNameStrategy: {self.ref_strategy}")
-
     def serialize(
         self,
         topic: str,

@@ -189,6 +189,14 @@ flowchart TB
             DEL_PERM["DELETE /subjects/{s}?permanent=true"]
         end
 
+        subgraph SR_CSFLE["Catalog / DEK Registry (CSFLE)"]
+            POST_TAG["POST /catalog/v1/types/tagdefs\ncreate_tag()  idempotent"]
+            POST_KEK["POST /dek-registry/v1/keks\ncreate_kek()"]
+            GET_KEK["GET /dek-registry/v1/keks/{name}\nget_kek()"]
+            POST_DEK["POST /dek-registry/v1/keks/{name}/deks\ncreate_dek()"]
+            GET_DEK["GET /dek-registry/v1/keks/{name}/deks/{subject}\nget_dek()"]
+        end
+
         subgraph SR_COMPAT["Compatibility"]
             POST_COMPAT["POST /compatibility/subjects/{s}/versions/{v}\n→ is_compatible"]
             GET_CFG["GET /config[/{s}]\n→ compatibilityLevel"]
@@ -203,6 +211,7 @@ flowchart TB
         SESS --> SR_READ
         SESS --> SR_WRITE
         SESS --> SR_COMPAT
+        SESS --> SR_CSFLE
         GET_ID --> CACHE
     end
 
@@ -306,6 +315,7 @@ flowchart TB
     class Boot,UTIL,CONST boot
     classDef csfle    fill:#8b1a1a,color:#fff,stroke:#8b1a1a
     class CSFLE_BOX,FE,GEF csfle
+    class SR_CSFLE,POST_TAG,POST_KEK,GET_KEK,POST_DEK,GET_DEK csfle
     classDef iface     fill:#4a4a4a,color:#fff,stroke:#4a4a4a
     class PROTO_IF,PSPROTO iface
 ```
@@ -429,6 +439,9 @@ used by `decode_header()` to skip the message-index varint array.
 | `get_versions_for_schema(id)` | `GET /schemas/ids/{id}/versions` |
 | `referenced_by(subject, version)` | `GET /subjects/{s}/versions/{v}/referencedby` |
 | `register(subject, schema, ...)` | `POST /subjects/{s}/versions` |
+| `create_tag(tag_name)` | `POST /catalog/v1/types/tagdefs` *(idempotent)* |
+| `create_kek(name, kms_type, kms_key_id, shared?)` | `POST /dek-registry/v1/keks` |
+| `get_kek(name)` | `GET /dek-registry/v1/keks/{name}` |
 | `create_dek(kek, subj, algo?, encrypted_key_material?)` | `POST /dek-registry/v1/keks/{name}/deks` |
 | `get_dek(kek, subject)` | `GET /dek-registry/v1/keks/{name}/deks/{subject}` |
 | `delete_version(subject, version)` | `DELETE /subjects/{s}/versions/{v}` |
