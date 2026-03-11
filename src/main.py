@@ -61,14 +61,22 @@ def main() -> None:
         logger.error("  export AWS_KMS_KEY_ARN=arn:aws:kms:region:acct:key/key-id")
         sys.exit(1)
 
-    run_id    = args.run_id
-    kafka_cfg = cfg if args.mode == "full" else None
-    save_dir  = args.save_schemas or ""
-    sr        = SchemaRegistryClient(cfg["sr_url"], cfg["sr_api_key"], cfg["sr_api_secret"])
+    run_id     = args.run_id
+    kafka_cfg  = cfg if args.mode == "full" else None
+    save_dir   = args.save_schemas or ""
+    use_protoc = args.use_protoc
+    sr         = SchemaRegistryClient(cfg["sr_url"], cfg["sr_api_key"], cfg["sr_api_secret"])
+
+    # Compile .proto files if --use-protoc is set
+    if use_protoc:
+        from compiled_protobuf_helpers import compile_protos
+        logger.info("\n[protoc] Compiling .proto schemas …")
+        compile_protos("schemas")
 
     logger.info("=" * 100)
     logger.info("  Confluent Cloud Python Protobuf CSFLE (Client-Side Field-Level Encryption) Example Demo(s)")
-    logger.info(f"  Python {sys.version.split()[0]}  |  mode={args.mode}  |  run_id={run_id}")
+    proto_mode = "protoc (compiled stubs)" if use_protoc else "dynamic (runtime descriptors)"
+    logger.info(f"  Python {sys.version.split()[0]}  |  mode={args.mode}  |  run_id={run_id}  |  protobuf={proto_mode}")
     logger.info(f"  SR:    {cfg['sr_url']}")
     if kafka_cfg:
         logger.info(f"  Kafka: {cfg['bootstrap_servers']}")
@@ -92,19 +100,19 @@ def main() -> None:
     run_all = args.demo == "all"
 
     if run_all or args.demo == "basic":
-        demo_basic(sr, kafka_cfg, run_id, save_dir)
+        demo_basic(sr, kafka_cfg, run_id, save_dir, use_protoc)
 
     if run_all or args.demo == "delete":
         demo_delete_protection(sr, run_id)
 
     if run_all or args.demo == "evolution":
-        demo_evolution(sr, kafka_cfg, run_id, save_dir)
+        demo_evolution(sr, kafka_cfg, run_id, save_dir, use_protoc)
 
     if run_all or args.demo == "oneof":
-        demo_oneof(sr, kafka_cfg, run_id, save_dir)
+        demo_oneof(sr, kafka_cfg, run_id, save_dir, use_protoc)
 
     if run_all or args.demo == "null":
-        demo_null_handling(sr, run_id, save_dir)
+        demo_null_handling(sr, run_id, save_dir, use_protoc)
 
     if run_all or args.demo == "compat":
         demo_compatibility(sr)
@@ -113,10 +121,10 @@ def main() -> None:
         demo_types(sr)
 
     if run_all or args.demo == "strategies":
-        demo_strategies(sr, run_id, save_dir)
+        demo_strategies(sr, run_id, save_dir, use_protoc)
 
     if run_all or args.demo == "csfle":
-        demo_csfle(sr, kafka_cfg, run_id, cfg.get("aws_kms_key_arn", ""), save_dir)
+        demo_csfle(sr, kafka_cfg, run_id, cfg.get("aws_kms_key_arn", ""), save_dir, use_protoc)
 
     logger.info(f"\n{'─' * 100}")
     logger.info(f"  Done. All topics/subjects use suffix '-{run_id}'.")

@@ -119,4 +119,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Save generated .proto schemas to DIR (created if needed). Default: disabled.",
     )
+    p.add_argument(
+        "--use-protoc",
+        action="store_true",
+        default=False,
+        help="Use protoc-compiled stubs instead of dynamic runtime Protobuf. "
+             "Requires protoc on PATH (brew install protobuf).",
+    )
     return p.parse_args()

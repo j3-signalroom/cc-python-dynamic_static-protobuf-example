@@ -10,6 +10,7 @@
 #               [--demo=<DEMO>]
 #               [--run-id=<RUN_ID>]
 #               [--save-schemas=<SAVE_DIR>]
+#               [--use-protoc]
 #
 #
 
@@ -55,6 +56,7 @@ mode=""
 demo="all"
 run_id=""
 save_schemas_dir=""
+use_protoc=""
 
 
 # Get the arguments passed by shift to remove the first word
@@ -76,6 +78,8 @@ do
         *"--save-schemas="*)
             arg_length=15
             save_schemas_dir=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        "--use-protoc")
+            use_protoc="--use-protoc";;
         *)
             echo
             print_error "(Error Message 001)  You included an invalid argument: $arg"
@@ -116,20 +120,11 @@ aws sso login $AWS_PROFILE
 eval $(aws2-wrap $AWS_PROFILE --export)
 export AWS_REGION=$(aws configure get region $AWS_PROFILE)
 
-# Run the demo script with the appropriate arguments based on the presence of optional arguments
-if [ -z "$run_id" ]
-then
-    if [ -z "$save_schemas_dir" ]
-    then
-        uv run python src/main.py --mode $mode --demo $demo
-    else
-        uv run python src/main.py --mode $mode --demo $demo --save-schemas $save_schemas_dir
-    fi
-else
-    if [ -z "$save_schemas_dir" ]
-    then
-        uv run python src/main.py --mode $mode --demo $demo --run-id $run_id
-    else
-        uv run python src/main.py --mode $mode --demo $demo --run-id $run_id --save-schemas $save_schemas_dir
-    fi
-fi
+# Build the argument list for the demo script
+cmd_args="--mode $mode --demo $demo"
+[ -n "$run_id" ] && cmd_args="$cmd_args --run-id $run_id"
+[ -n "$save_schemas_dir" ] && cmd_args="$cmd_args --save-schemas $save_schemas_dir"
+[ -n "$use_protoc" ] && cmd_args="$cmd_args --use-protoc"
+
+# Run the demo script
+uv run python src/main.py $cmd_args

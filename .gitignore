@@ -15,4 +15,5 @@ wheels/
 *.csv
 .claude/
 schemas/
+src/generated_pb2/
 scratch.pad

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from schema_registry_client import SchemaRegistryClient
-from dynamic_protobuf_helpers import ProtoMessage
+from proto_schema import ProtoSchema
 from field_encryption import FieldEncryptor, get_encrypted_fields
 from utilities import setup_logging
 
@@ -17,8 +17,8 @@ __status__     = "dev"
 logger = setup_logging()
 
 
-# schema_id → ProtoMessage: lets the dynamic deserializer find the right class
-_schema_id_to_message: dict[int, "ProtoMessage"] = {}
+# schema_id → ProtoSchema: lets the deserializer find the right class
+_schema_id_to_message: dict[int, "ProtoSchema"] = {}
 
 # schema_id → (metadata, rule_set, subject): CSFLE context for the deserializer
 _schema_id_to_csfle: dict[int, tuple[dict | None, dict | None, str]] = {}
@@ -48,7 +48,7 @@ class KafkaProtobufSerializer:
         self.ref_strategy = reference_subject_name_strategy
         self.field_encryptor = field_encryptor
 
-    def _subject(self, topic: str, message: ProtoMessage, is_key: bool) -> str:
+    def _subject(self, topic: str, message: ProtoSchema, is_key: bool) -> str:
         suffix = "key" if is_key else "value"
         match self.subject_name_strategy:
             case "TopicNameStrategy":
@@ -72,7 +72,7 @@ class KafkaProtobufSerializer:
     def serialize(
         self,
         topic: str,
-        message: ProtoMessage,
+        message: ProtoSchema,
         data: dict,
         is_key: bool = False,
         references: list[dict] | None = None,
@@ -119,7 +119,7 @@ class KafkaProtobufDeserializer:
     def __init__(
         self,
         sr: SchemaRegistryClient,
-        specific_type: ProtoMessage | None = None,
+        specific_type: ProtoSchema | None = None,
         derive_type: bool = False,
         field_encryptor: FieldEncryptor | None = None,
     ) -> None:

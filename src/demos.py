@@ -30,24 +30,29 @@ def section(title: str) -> None:
 
 
 # ── Demo 1 ─────────────────────────────────────────────────────────────────
-def demo_basic(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "") -> None:
+def demo_basic(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "", use_protoc: bool = False) -> None:
     section("1 · Basic Protobuf Serializer & Deserializer")
 
-    other_record = ProtoMessage(
-        name="OtherRecord",
-        package="com.acme",
-        fields=[ProtoField("other_id", "int32", 1)],
-        file_name="other.proto",   # must match my_record.imports = ["other.proto"]
-    )
-    my_record = ProtoMessage(
-        name="MyRecord",
-        package="com.acme",
-        imports=["other.proto"],
-        fields=[
-            ProtoField("f1", "string", 1),
-            ProtoField("f2", "OtherRecord", 2),
-        ],
-    )
+    if use_protoc:
+        from compiled_protobuf_helpers import load_compiled_message
+        other_record = load_compiled_message("other.proto", "OtherRecord")
+        my_record = load_compiled_message("MyRecord.proto", "MyRecord")
+    else:
+        other_record = ProtoMessage(
+            name="OtherRecord",
+            package="com.acme",
+            fields=[ProtoField("other_id", "int32", 1)],
+            file_name="other.proto",   # must match my_record.imports = ["other.proto"]
+        )
+        my_record = ProtoMessage(
+            name="MyRecord",
+            package="com.acme",
+            imports=["other.proto"],
+            fields=[
+                ProtoField("f1", "string", 1),
+                ProtoField("f2", "OtherRecord", 2),
+            ],
+        )
 
     logger.info("\nProto schemas:")
     logger.info("── other.proto ──")
@@ -137,11 +142,17 @@ def demo_delete_protection(sr: SchemaRegistryClient, run_id: str) -> None:
 
 
 # ── Demo 3 ─────────────────────────────────────────────────────────────────
-def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "") -> None:
+def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "", use_protoc: bool = False) -> None:
     section("3 · Schema Evolution (Backward Compatibility)")
 
     subject = f"transactions-proto-{run_id}-value"
     topic   = f"transactions-proto-{run_id}"
+
+    # Schema evolution requires two versions of the same message name ('MyRecord')
+    # in one process.  protoc-generated stubs register in a global descriptor pool
+    # that rejects duplicate names, so we always use the dynamic approach here.
+    if use_protoc:
+        logger.info("  (using dynamic descriptors — protoc cannot load two 'MyRecord' versions)")
 
     v1 = ProtoMessage(
         name="MyRecord",
@@ -176,10 +187,14 @@ def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str
     if save_dir:
         from pathlib import Path
         evo_dir = Path(save_dir) / "evolution"
-        v1.file_name = "MyRecord_v1.proto"
-        v2.file_name = "MyRecord_v2.proto"
+        if not use_protoc:
+            v1.file_name = "MyRecord_v1.proto"
+            v2.file_name = "MyRecord_v2.proto"
         for msg in (v1, v2):
-            path = msg.save_schema(evo_dir)
+            # For protoc mode, file_name already includes "evolution/" prefix,
+            # so save directly to save_dir to avoid double nesting
+            dest = save_dir if use_protoc else str(evo_dir)
+            path = msg.save_schema(dest)
             logger.info(f"  Saved → {path}")
 
     # Test compatibility before registering
@@ -211,45 +226,52 @@ def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str
 
 
 # ── Demo 4 ─────────────────────────────────────────────────────────────────
-def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "") -> None:
+def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "", use_protoc: bool = False) -> None:
     section("4 · Multiple Event Types in the Same Topic (oneOf)")
 
-    customer = ProtoMessage(
-        name="Customer", package="io.confluent.examples.proto",
-        fields=[
-            ProtoField("customer_id",      "int64",  1),
-            ProtoField("customer_name",    "string", 2),
-            ProtoField("customer_email",   "string", 3),
-            ProtoField("customer_address", "string", 4),
-        ],
-    )
-    product = ProtoMessage(
-        name="Product", package="io.confluent.examples.proto",
-        fields=[
-            ProtoField("product_id",   "int32",  1),
-            ProtoField("product_name", "string", 2),
-        ],
-    )
-    order = ProtoMessage(
-        name="Order", package="io.confluent.examples.proto",
-        imports=["Product.proto", "Customer.proto"],
-        fields=[
-            ProtoField("order_id",     "int32",  1),
-            ProtoField("order_date",   "string", 2),
-            ProtoField("order_amount", "int32",  3),
-        ],
-    )
-    all_types = ProtoMessage(
-        name="AllTypes", package="io.confluent.examples.proto",
-        imports=["Customer.proto", "Product.proto", "Order.proto"],
-        oneofs={
-            "oneof_type": [
-                ProtoField("customer", "Customer", 1),
-                ProtoField("product",  "Product",  2),
-                ProtoField("order",    "Order",    3),
-            ]
-        },
-    )
+    if use_protoc:
+        from compiled_protobuf_helpers import load_compiled_message
+        customer  = load_compiled_message("Customer.proto", "Customer")
+        product   = load_compiled_message("Product.proto", "Product")
+        order     = load_compiled_message("Order.proto", "Order")
+        all_types = load_compiled_message("AllTypes.proto", "AllTypes")
+    else:
+        customer = ProtoMessage(
+            name="Customer", package="io.confluent.examples.proto",
+            fields=[
+                ProtoField("customer_id",      "int64",  1),
+                ProtoField("customer_name",    "string", 2),
+                ProtoField("customer_email",   "string", 3),
+                ProtoField("customer_address", "string", 4),
+            ],
+        )
+        product = ProtoMessage(
+            name="Product", package="io.confluent.examples.proto",
+            fields=[
+                ProtoField("product_id",   "int32",  1),
+                ProtoField("product_name", "string", 2),
+            ],
+        )
+        order = ProtoMessage(
+            name="Order", package="io.confluent.examples.proto",
+            imports=["Product.proto", "Customer.proto"],
+            fields=[
+                ProtoField("order_id",     "int32",  1),
+                ProtoField("order_date",   "string", 2),
+                ProtoField("order_amount", "int32",  3),
+            ],
+        )
+        all_types = ProtoMessage(
+            name="AllTypes", package="io.confluent.examples.proto",
+            imports=["Customer.proto", "Product.proto", "Order.proto"],
+            oneofs={
+                "oneof_type": [
+                    ProtoField("customer", "Customer", 1),
+                    ProtoField("product",  "Product",  2),
+                    ProtoField("order",    "Order",    3),
+                ]
+            },
+        )
 
     logger.info("\nWrapper schema (AllTypes):")
     logger.info(all_types.to_schema_string())
@@ -309,17 +331,21 @@ def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, sa
 
 
 # ── Demo 5 ─────────────────────────────────────────────────────────────────
-def demo_null_handling(sr: SchemaRegistryClient, run_id: str, save_dir: str = "") -> None:
+def demo_null_handling(sr: SchemaRegistryClient, run_id: str, save_dir: str = "", use_protoc: bool = False) -> None:
     section("5 · Null-Value Handling with Optional Fields (recommended)")
 
-    schema = ProtoMessage(
-        name="ExampleMessage",
-        fields=[
-            ProtoField("name",     "string", 1, optional=True),
-            ProtoField("age",      "int32",  2, optional=True),
-            ProtoField("isActive", "bool",   3, optional=True),
-        ],
-    )
+    if use_protoc:
+        from compiled_protobuf_helpers import load_compiled_message
+        schema = load_compiled_message("ExampleMessage.proto", "ExampleMessage")
+    else:
+        schema = ProtoMessage(
+            name="ExampleMessage",
+            fields=[
+                ProtoField("name",     "string", 1, optional=True),
+                ProtoField("age",      "int32",  2, optional=True),
+                ProtoField("isActive", "bool",   3, optional=True),
+            ],
+        )
 
     logger.info("\nSchema with optional fields:")
     logger.info(schema.to_schema_string())
@@ -411,13 +437,17 @@ def demo_types(sr: SchemaRegistryClient) -> None:
 
 
 # ── Demo 8 ─────────────────────────────────────────────────────────────────
-def demo_strategies(sr: SchemaRegistryClient, run_id: str, save_dir: str = "") -> None:
+def demo_strategies(sr: SchemaRegistryClient, run_id: str, save_dir: str = "", use_protoc: bool = False) -> None:
     section("8 · Subject Name Strategies")
 
-    schema = ProtoMessage(
-        name="Payment",
-        fields=[ProtoField("amount", "float", 1), ProtoField("currency", "string", 2)],
-    )
+    if use_protoc:
+        from compiled_protobuf_helpers import load_compiled_message
+        schema = load_compiled_message("Payment.proto", "Payment")
+    else:
+        schema = ProtoMessage(
+            name="Payment",
+            fields=[ProtoField("amount", "float", 1), ProtoField("currency", "string", 2)],
+        )
     topic = f"payments-{run_id}"
 
     if save_dir:
@@ -443,20 +473,24 @@ def demo_strategies(sr: SchemaRegistryClient, run_id: str, save_dir: str = "") -
 
 
 # ── Demo 9 ─────────────────────────────────────────────────────────────────
-def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aws_kms_key_arn: str, save_dir: str = "") -> None:
+def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aws_kms_key_arn: str, save_dir: str = "", use_protoc: bool = False) -> None:
     section("9 · Client-Side Field Level Encryption (CSFLE)")
 
     # ── 1. Define a schema with sensitive fields ──────────────────────
-    sensitive_record = ProtoMessage(
-        name="SensitiveRecord",
-        fields=[
-            ProtoField("id",    "string", 1),
-            ProtoField("name",  "string", 2),
-            ProtoField("ssn",   "string", 3),
-            ProtoField("email", "string", 4),
-            ProtoField("amount", "float", 5),
-        ],
-    )
+    if use_protoc:
+        from compiled_protobuf_helpers import load_compiled_message
+        sensitive_record = load_compiled_message("SensitiveRecord.proto", "SensitiveRecord")
+    else:
+        sensitive_record = ProtoMessage(
+            name="SensitiveRecord",
+            fields=[
+                ProtoField("id",    "string", 1),
+                ProtoField("name",  "string", 2),
+                ProtoField("ssn",   "string", 3),
+                ProtoField("email", "string", 4),
+                ProtoField("amount", "float", 5),
+            ],
+        )
 
     logger.info("\nSchema with sensitive fields:")
     logger.info(sensitive_record.to_schema_string())
