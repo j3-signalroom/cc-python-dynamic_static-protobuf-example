@@ -1,7 +1,12 @@
-# Confluent Cloud Python Protobuf CSFLE (Client-Side Field-Level Encryption) Example
+# Confluent Cloud Python Dynamic or Static Protobuf Example
 A hands-on Python demonstration of the **Confluent Cloud Protobuf Schema Serializer & Deserializer**, covering every major concept from the official [Confluent Protobuf SerDes documentation](https://docs.confluent.io/cloud/current/sr/fundamentals/serdes-develop/serdes-protobuf.html).
 
-The project talks to a Confluent Cloud Schema Registry over the SR REST API and, when run in `full` mode, produces and consumes messages on a Kafka cluster via `confluent-kafka`. No `protoc` compiler or generated stubs are required — schemas are defined as Python dataclasses, compiled at runtime into `google.protobuf` `FileDescriptorProto` objects, and serialized to **Protobuf binary** using `google.protobuf.message_factory`.
+The project talks to a Confluent Cloud Schema Registry over the SR REST API and, when run in `full` mode, produces and consumes messages on a Kafka cluster via `confluent-kafka`. It supports two Protobuf modes:
+
+- **Dynamic (default)** — schemas are defined as Python dataclasses, compiled at runtime into `google.protobuf` `FileDescriptorProto` objects, and serialized to **Protobuf binary** using `google.protobuf.message_factory`. No `protoc` compiler or generated stubs are required.
+- **Static (`--use-protoc`)** — schemas are pre-compiled from `.proto` files in the `schemas/` directory into `_pb2.py` stubs via `protoc`, then wrapped by `CompiledProtoMessage` for better performance and compile-time type safety.
+
+Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the SerDes layer.
 
 ---
 
@@ -19,13 +24,15 @@ The project talks to a Confluent Cloud Schema Registry over the SR REST API and,
     + [1.7 Confluent Cloud prerequisites](#17-confluent-cloud-prerequisites)
     + [1.8 Core classes](#18-core-classes)
         + [1.8.1 `SchemaRegistryClient` (`schema_registry_client.py`)](#181-schemaregistryclient-schema_registry_clientpy)
-        + [1.8.2 `ProtoMessage` / `ProtoField` (`dynamic_protobuf_helpers.py`)](#182-protomessage--protofield-dynamic_protobuf_helperspy)
-        + [1.8.3 `KafkaProtobufSerializer` (`kafka_protobuf_serdes.py`)](#183-kafkaprotobufserializer-kafka_protobuf_serdespy)
-        + [1.8.4 `KafkaProtobufDeserializer` (`kafka_protobuf_serdes.py`)](#184-kafkaprotobuffdeserializer-kafka_protobuf_serdespy)
-        + [1.8.5 `FieldEncryptor` / `get_encrypted_fields()` (`field_encryption.py`)](#185-fieldencryptor--get_encrypted_fields-field_encryptionpy)
-        + [1.8.6 `kafka_helpers.py`](#186-kafka_helperspy)
-        + [1.8.7 `utilities.py`](#187-utilitiespy)
-        + [1.8.8 `demos.py`](#188-demospy)
+        + [1.8.2 `ProtoSchema` (`proto_schema.py`)](#182-protoschema-proto_schemapy)
+        + [1.8.3 `ProtoMessage` / `ProtoField` (`dynamic_protobuf_helpers.py`)](#183-protomessage--protofield-dynamic_protobuf_helperspy)
+        + [1.8.4 `CompiledProtoMessage` / `compile_protos` / `load_compiled_message` (`compiled_protobuf_helpers.py`)](#184-compiledprotomessage--compile_protos--load_compiled_message-compiled_protobuf_helperspy)
+        + [1.8.5 `KafkaProtobufSerializer` (`kafka_protobuf_serdes.py`)](#185-kafkaprotobufserializer-kafka_protobuf_serdespy)
+        + [1.8.6 `KafkaProtobufDeserializer` (`kafka_protobuf_serdes.py`)](#186-kafkaprotobufdeserializer-kafka_protobuf_serdespy)
+        + [1.8.7 `FieldEncryptor` / `get_encrypted_fields()` (`field_encryption.py`)](#187-fieldencryptor--get_encrypted_fields-field_encryptionpy)
+        + [1.8.8 `kafka_helpers.py`](#188-kafka_helperspy)
+        + [1.8.9 `utilities.py`](#189-utilitiespy)
+        + [1.8.10 `demos.py`](#1810-demospy)
     + [1.9 Logging](#19-logging)
     + [1.10 Wire format](#110-wire-format)
         - [1.10.1 Why a message index?](#1101-why-a-message-index)
@@ -53,28 +60,44 @@ The project talks to a Confluent Cloud Schema Registry over the SR REST API and,
 ### **1.1 Project layout**
 
 ```
-cc-python-protobuf-csfle-example/
+cc-python-dynamic_static-protobuf-example/
 ├── src
 │   ├── constants.py                 # DEFAULT_TOOL_LOG_FILE, DEFAULT_TOOL_LOG_FORMAT
 │   ├── utilities.py                 # setup_logging(), get_config(), parse_args() — logging, env config, CLI
 │   ├── schema_registry_client.py    # SchemaRegistryClient — SR REST API wrapper + wire format
+│   ├── proto_schema.py              # ProtoSchema Protocol — common interface for dynamic & compiled schemas
+│   ├── dynamic_protobuf_helpers.py  # ProtoMessage & ProtoField — dynamic proto3 schema builders
+│   ├── compiled_protobuf_helpers.py # CompiledProtoMessage, compile_protos(), load_compiled_message() — protoc stubs
 │   ├── kafka_protobuf_serdes.py     # KafkaProtobufSerializer & KafkaProtobufDeserializer
 │   ├── kafka_helpers.py             # ensure_topics(), kafka_produce(), kafka_consume_one()
-│   ├── dynamic_protobuf_helpers.py  # ProtoMessage & ProtoField — dynamic proto3 schema builders
 │   ├── field_encryption.py          # FieldEncryptor & get_encrypted_fields() — AES-256-GCM CSFLE
 │   ├── demos.py                     # All nine demo functions (demo_basic … demo_csfle)
-│   └── main.py                      # Thin entry point — wires config, SR client, and demo dispatch
+│   ├── main.py                      # Thin entry point — wires config, SR client, and demo dispatch
+│   └── generated_pb2/               # Auto-generated protoc stubs (gitignored, created by --use-protoc)
+├── schemas                          # Proto3 schema definitions (gitignored, used by --use-protoc)
+│   ├── MyRecord.proto               # Basic schema with import
+│   ├── other.proto                   # Referenced schema (OtherRecord)
+│   ├── AllTypes.proto                # OneOf wrapper (Customer + Product + Order)
+│   ├── Customer.proto                # Customer message
+│   ├── Product.proto                 # Product message
+│   ├── Order.proto                   # Order message
+│   ├── Payment.proto                 # Payment message (subject name strategies)
+│   ├── SensitiveRecord.proto         # CSFLE example with PII fields
+│   ├── ExampleMessage.proto          # General-purpose example
+│   └── evolution
+│       ├── MyRecord_v1.proto         # Schema evolution v1 (id, amount)
+│       └── MyRecord_v2.proto         # Schema evolution v2 (+ customer_id)
 ├── run-demo.sh                      # Shell script — authenticates via AWS SSO and runs all demos in `full` mode
 ├── pyproject.toml                   # Project metadata, dependencies, logging
 ├── uv.lock                          # Pinned dependency lockfile — commit this
 ├── .env                             # Credentials — NOT COMMITTED, loaded automatically by python-dotenv at startup
-├── .gitignore                       # Ignore .env, .venv/, logs, __pycache__/, etc.
+├── .gitignore                       # Ignore .env, .venv/, logs, __pycache__/, schemas/, generated_pb2/, etc.
 ├── CHANGELOG.md                     # Changelog in Markdown format
 ├── CHANGELOG.pdf                    # Changelog in PDF format
 ├── KNOWNISSUES.md                   # Known issues in Markdown format
 ├── KNOWNISSUES.pdf                  # Known issues in PDF format
 ├── LICENSE.md                       # License in Markdown format
-├── LICENSE.pdf                      # License in PDF format  
+├── LICENSE.pdf                      # License in PDF format
 └── README.md                        # This file — project overview, setup instructions, and documentation of all core concepts and classes
 ```
 
@@ -108,8 +131,14 @@ flowchart TB
 
     Boot --> CLI
 
-    %% ── Schema helpers ─────────────────────────────────────────────────
-    subgraph SCHEMA["Proto Schema Helpers  (dynamic_protobuf_helpers.py)"]
+    %% ── ProtoSchema Protocol ──────────────────────────────────────────
+    subgraph PROTO_IF["ProtoSchema Protocol  (proto_schema.py)"]
+        direction LR
+        PSPROTO["ProtoSchema\nname · file_name\nto_schema_string()\nserialize() · deserialize()\nsave_schema()"]
+    end
+
+    %% ── Dynamic schema helpers ──────────────────────────────────────────
+    subgraph SCHEMA["Dynamic Proto Helpers  (dynamic_protobuf_helpers.py)"]
         direction TB
         PF["ProtoField\nname · type · number\noptional · repeated"]
         PM["ProtoMessage\nname · package · imports\nfields · oneofs"]
@@ -121,6 +150,19 @@ flowchart TB
         PM --> DES
         PF --> PM
     end
+
+    %% ── Compiled schema helpers ─────────────────────────────────────────
+    subgraph COMPILED["Compiled Proto Helpers  (compiled_protobuf_helpers.py)"]
+        direction TB
+        COMP["compile_protos()\nprotoc → _pb2.py stubs"]
+        LOAD["load_compiled_message()\nimport _pb2 module"]
+        CPM["CompiledProtoMessage\nname · file_name\nserialize() · deserialize()"]
+        COMP --> LOAD
+        LOAD --> CPM
+    end
+
+    PM -.->|"satisfies"| PSPROTO
+    CPM -.->|"satisfies"| PSPROTO
 
     %% ── SR client ───────────────────────────────────────────────────────
     subgraph SRC["SchemaRegistryClient  (schema_registry_client.py)"]
@@ -225,12 +267,15 @@ flowchart TB
     %% ── Wiring ──────────────────────────────────────────────────────────
     CLI --> SRC
     CLI --> SCHEMA
+    CLI --> COMPILED
     CLI --> SERDES
     CLI --> KAFKA_H
     CLI --> DEMOS
     CLI --> CSFLE_BOX
 
     SCHEMA --> SERDES
+    COMPILED --> SERDES
+    PROTO_IF --> SERDES
     SRC --> SERDES
     SRC --> DEMOS
     SERDES --> DEMOS
@@ -252,12 +297,14 @@ flowchart TB
 
     class CC_SR,CC_KAFKA cloud
     class SRC,SERDES core
-    class KAFKA_H,SCHEMA helper
+    class KAFKA_H,SCHEMA,COMPILED helper
     class DEMOS,D1,D2,D3,D4,D5,D6,D7,D8,D9 demo
     class WIRE,ENC,DEC wire
     class Boot,UTIL,CONST boot
     classDef csfle    fill:#8b1a1a,color:#fff,stroke:#8b1a1a
     class CSFLE_BOX,FE,GEF csfle
+    classDef iface     fill:#4a4a4a,color:#fff,stroke:#4a4a4a
+    class PROTO_IF,PSPROTO iface
 ```
 
 ---
@@ -296,8 +343,8 @@ Curious to learn more about [Astral](https://astral.sh/)'s `uv`? Check these out
 ### **1.4 Setup**
 
 ```bash
-git clone <repo-url>
-cd cc-python-protobuf-csfle-example
+git clone https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example
+cd cc-python-dynamic_static-protobuf-example
 
 # Create .venv and install exact pinned versions from uv.lock
 uv sync
@@ -310,6 +357,7 @@ into a local `.venv`. No manual `pip install` is needed.
 
 | Package | Minimum | Purpose |
 |---|---|---|
+| `aws2-wrap` | 1.4.0 | AWS SSO credential wrapper used by `run-demo.sh` |
 | `boto3` | 1.38.0 | AWS KMS client for CSFLE DEK unwrapping |
 | `confluent-kafka` | 2.13.2 | Producer, Consumer, AdminClient (required for `--mode full` only) |
 | `cryptography` | 44.0.0 | AES-256-GCM encryption for Client-Side Field Level Encryption (CSFLE) |
@@ -389,7 +437,23 @@ used by `decode_header()` to skip the message-index varint array.
 | `encode(schema_id, payload)` | *(local)* packs Confluent wire format |
 | `decode_header(data)` | *(local)* validates magic byte, extracts schema ID |
 
-#### **1.8.2 `ProtoMessage` / `ProtoField` (`dynamic_protobuf_helpers.py`)**
+#### **1.8.2 `ProtoSchema` (`proto_schema.py`)**
+
+A `typing.Protocol` (runtime-checkable) that defines the common interface for both
+dynamic (`ProtoMessage`) and compiled (`CompiledProtoMessage`) Protobuf schema objects.
+Any object exposing these attributes and methods can be used interchangeably by the
+SerDes layer (`KafkaProtobufSerializer` / `KafkaProtobufDeserializer`).
+
+| Attribute / Method | Purpose |
+|---|---|
+| `name: str` | The Protobuf message name |
+| `file_name: str` | The `.proto` file name |
+| `to_schema_string()` | Return the `.proto` schema text for SR registration |
+| `serialize(data)` | Encode a dict to Protobuf binary |
+| `deserialize(raw)` | Decode Protobuf binary to a plain dict |
+| `save_schema(directory)` | Write the `.proto` schema text to `directory/{file_name}` |
+
+#### **1.8.3 `ProtoMessage` / `ProtoField` (`dynamic_protobuf_helpers.py`)**
 
 Pure-Python dataclasses that build and binary-encode proto3 schemas without
 `protoc` or generated stubs, using the `google.protobuf` runtime directly.
@@ -416,7 +480,38 @@ and consume real Protobuf binary — no JSON stand-in.
 dynamic schemas as standard `.proto` files for use with `protoc` or other
 language toolchains.
 
-#### **1.8.3 `KafkaProtobufSerializer` (`kafka_protobuf_serdes.py`)**
+#### **1.8.4 `CompiledProtoMessage` / `compile_protos` / `load_compiled_message` (`compiled_protobuf_helpers.py`)**
+
+Provides the static (protoc-compiled) counterpart to the dynamic `ProtoMessage` approach.
+Activated by the `--use-protoc` CLI flag.
+
+**`compile_protos(proto_dir)`** — Locates the `protoc` binary on `PATH`, then compiles
+all `.proto` files under `proto_dir` (recursively) into `_pb2.py` stubs in
+`src/generated_pb2/`. Creates `__init__.py` files in all generated subdirectories for
+Python import resolution. Raises `FileNotFoundError` if `protoc` is not installed.
+
+**`load_compiled_message(proto_file, message_name)`** — Dynamically imports the
+generated `_pb2` module for a given `.proto` file, extracts the named message class,
+and wraps it in a `CompiledProtoMessage` dataclass.
+
+**`CompiledProtoMessage`** — A dataclass wrapper around a protoc-generated message
+class that satisfies the `ProtoSchema` protocol. Provides the same
+`serialize()` / `deserialize()` / `to_schema_string()` / `save_schema()` interface as
+`ProtoMessage`, but uses pre-compiled stubs for better performance and compile-time
+type safety.
+
+| Method | Purpose |
+|---|---|
+| `to_schema_string()` | Returns the original `.proto` schema text (read from `schemas/`) |
+| `serialize(data)` | `ParseDict` → `SerializeToString()` using the compiled message class |
+| `deserialize(raw)` | `ParseFromString` → `MessageToDict` using the compiled message class |
+| `save_schema(directory)` | Writes the `.proto` schema text to `directory/{file_name}` |
+
+> **Note:** Static mode uses the global `descriptor_pool`, so it cannot load two versions
+> of the same message name simultaneously (unlike the dynamic per-instance pool approach).
+> This makes it unsuitable for schema-evolution demos that register multiple versions.
+
+#### **1.8.5 `KafkaProtobufSerializer` (`kafka_protobuf_serdes.py`)**
 
 Mirrors the Java `KafkaProtobufSerializer`. Resolves the SR subject from the
 topic, message name, and `is_key` flag using the configured
@@ -427,7 +522,7 @@ deserializer can resolve message classes by schema ID. When a `field_encryptor`
 is provided along with `metadata` and `rule_set`, tagged fields are encrypted
 via `FieldEncryptor.encrypt_fields()` before Protobuf serialization.
 
-#### **1.8.4 `KafkaProtobufDeserializer` (`kafka_protobuf_serdes.py`)**
+#### **1.8.6 `KafkaProtobufDeserializer` (`kafka_protobuf_serdes.py`)**
 
 Mirrors the Java `KafkaProtobufDeserializer`. Strips the wire-format header
 via `sr.decode_header()`, warms the schema cache via `get_schema_by_id()`,
@@ -438,7 +533,7 @@ populated by the serializer (DynamicMessage equivalent). When a
 after deserialization using metadata from either the SR response or an
 in-process `_schema_id_to_csfle` cache.
 
-#### **1.8.5 `FieldEncryptor` / `get_encrypted_fields()` (`field_encryption.py`)**
+#### **1.8.7 `FieldEncryptor` / `get_encrypted_fields()` (`field_encryption.py`)**
 
 Implements AES-256-GCM field-level encryption for Confluent CSFLE via AWS KMS.
 
@@ -468,7 +563,7 @@ base64-encoded before storage in the Protobuf string field.
 | `_encrypt_dek_via_kms(plaintext_key)` | Encrypt a DEK via AWS KMS `kms.encrypt()` |
 | `_decrypt_dek_via_kms(encrypted_key)` | Decrypt a DEK via AWS KMS `kms.decrypt()` |
 
-#### **1.8.6 `kafka_helpers.py`**
+#### **1.8.8 `kafka_helpers.py`**
 
 Contains all Kafka broker interaction logic, isolated from the demo and
 Schema Registry code. Only used when running with `--mode full`.
@@ -480,21 +575,23 @@ Schema Registry code. Only used when running with `--mode full`.
 | `kafka_produce(cfg, topic, key, value)` | `Producer` → `produce()` + `flush()` |
 | `kafka_consume_one(cfg, topic, group_id)` | `Consumer` → `subscribe()` → `poll()` loop + `commit()` |
 
-#### **1.8.7 `utilities.py`**
+#### **1.8.9 `utilities.py`**
 
 | Function | Purpose |
 |---|---|
 | `setup_logging(log_file?)` | Reads `[tool.logging]` from `pyproject.toml` via `tomllib` and applies it with `logging.config.dictConfig()`. Falls back to a basic dual-handler setup (file + console) if the config is absent. Returns the root logger. |
 | `get_config()` | Reads the seven environment variables (`BOOTSTRAP_SERVERS`, `KAFKA_API_KEY`, …, `AWS_KMS_KEY_ARN`) and returns `(cfg_dict, missing_keys)`. |
-| `parse_args()` | Defines the `--mode`, `--demo`, `--run-id`, and `--save-schemas` CLI flags via `argparse` and returns the parsed `Namespace`. |
+| `parse_args()` | Defines the `--mode`, `--demo`, `--run-id`, `--save-schemas`, and `--use-protoc` CLI flags via `argparse` and returns the parsed `Namespace`. |
 
-#### **1.8.8 `demos.py`**
+#### **1.8.10 `demos.py`**
 
 Contains all nine demo functions extracted from the former monolithic `main.py`.
 Each function receives a `SchemaRegistryClient`, an optional Kafka config dict
-(for `--mode full`), the `run_id` suffix, and an optional `save_dir` path.
-When `save_dir` is set (via `--save-schemas`), each demo writes its `.proto`
-schema files to the specified directory. The module has its own logger via
+(for `--mode full`), the `run_id` suffix, an optional `save_dir` path, and a
+`use_protoc` flag. When `use_protoc` is `True`, demos use `load_compiled_message()`
+to load protoc-compiled stubs instead of building schemas dynamically. When
+`save_dir` is set (via `--save-schemas`), each demo writes its `.proto` schema
+files to the specified directory. The module has its own logger via
 `setup_logging()`.
 
 | Function | Demo |
@@ -519,7 +616,7 @@ by `utilities.setup_logging()`:
 | Handler | Level | Output |
 |---|---|---|
 | `console` | `DEBUG` | stdout |
-| `file` | `INFO` | `cc-python-protobuf-csfle-example.log` (overwritten each run, mode `w`) |
+| `file` | `INFO` | `cc-python-dynamic_static-protobuf-example.log` (overwritten each run, mode `w`) |
 
 Log format: `YYYY-MM-DD HH:MM:SS - LEVEL - function_name - message`
 
@@ -587,7 +684,8 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
               --mode=<schema-only|full> \
               [--demo=<all|basic|delete|evolution|oneof|null|compat|types|strategies|csfle>] \
               [--run-id=<any string, e.g. "test1">] \
-              [--save-schemas=<directory>]
+              [--save-schemas=<directory>] \
+              [--use-protoc]
 ```
 
 | Argument | Required | Choice | Default | Description |
@@ -597,6 +695,7 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 | `--demo` | ❌ | `all` `basic` `delete` `evolution` `oneof` `null` `compat` `types` `strategies` `csfle` | `all` | Which demo to run |
 | `--run-id` | ❌ | any string | random 8-char UUID prefix | Appended to every topic and subject name to prevent collisions across runs |
 | `--save-schemas` | ❌ | directory path | disabled | Save generated `.proto` schema files to the given directory (created if needed) |
+| `--use-protoc` | ❌ | flag (no value) | disabled | Use protoc-compiled `_pb2.py` stubs instead of dynamic runtime descriptors. Requires `protoc` on `PATH` (`brew install protobuf`). |
 
 > All required flags must be provided; if a required flag is missing, the script exits with code `85`.
 
@@ -727,14 +826,18 @@ done
   adding a new *message type* (not just a field) breaks `FORWARD` compatibility.
 - **`uv.lock` should be committed.** It pins every transitive dependency for
   fully reproducible installs across machines and CI.
-- **Real Protobuf binary encoding.** `ProtoMessage.serialize()` and `deserialize()`
-  use `google.protobuf.message_factory` with dynamically constructed
-  `FileDescriptorProto` objects — no `protoc`, no generated stubs, real binary
-  on the wire. `json_format.ParseDict` / `MessageToDict` bridge between plain
-  Python dicts and `google.protobuf.Message` instances.
+- **Real Protobuf binary encoding.** Both `ProtoMessage` (dynamic) and
+  `CompiledProtoMessage` (static) produce real Protobuf binary on the wire.
+  The dynamic path uses `google.protobuf.message_factory` with runtime-constructed
+  `FileDescriptorProto` objects — no `protoc` required. The static path
+  (`--use-protoc`) compiles `.proto` files from `schemas/` into `_pb2.py` stubs
+  via `protoc` for better performance and compile-time type safety. Both satisfy
+  the `ProtoSchema` protocol and are interchangeable in the SerDes layer.
+  `json_format.ParseDict` / `MessageToDict` bridge between plain Python dicts
+  and `google.protobuf.Message` instances in both modes.
 
-  ## **5.0 Resources**
-  - [Confluent Protobuf SerDes documentation](https://docs.confluent.io/cloud/current/sr/fundamentals/serdes-develop/serdes-protobuf.html)
-  - [Protocol Buffers (or Protobuf for short) documentation](https://developers.google.com/protocol-buffers/docs/overview)
-  - [Protect Sensitive Data Using Client-Side Field Level Encryption on Confluent Cloud](https://docs.confluent.io/cloud/current/security/encrypt/csfle/overview.html#protect-sensitive-data-using-client-side-field-level-encryption-on-ccloud)
+## **5.0 Resources**
+- [Confluent Protobuf SerDes documentation](https://docs.confluent.io/cloud/current/sr/fundamentals/serdes-develop/serdes-protobuf.html)
+- [Protocol Buffers (or Protobuf for short) documentation](https://developers.google.com/protocol-buffers/docs/overview)
+- [Protect Sensitive Data Using Client-Side Field Level Encryption on Confluent Cloud](https://docs.confluent.io/cloud/current/security/encrypt/csfle/overview.html#protect-sensitive-data-using-client-side-field-level-encryption-on-ccloud)
   

@@ -1,7 +1,7 @@
 [project]
-name = "cc-python-protobuf-csfle-example"
-version = "0.01.00.00"
-description = "Confluent Cloud Python Protobuf CSFLE Example"
+name = "cc-python-dynamic_static-protobuf-example"
+version = "0.03.00.00"
+description = "Confluent Cloud Python Dynamic or Static Protobuf Example"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -29,7 +29,7 @@ datefmt = "%Y-%m-%d %H:%M:%S"
 
 [tool.logging.handlers.file]
 class = "logging.FileHandler"
-filename = "cc-python-protobuf-csfle-example.log"
+filename = "cc-python-dynamic_static-protobuf-example.log"
 formatter = "default"
 level = "INFO"
 mode = "w"
