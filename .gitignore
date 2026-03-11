@@ -14,6 +14,7 @@ wheels/
 .env
 *.csv
 .claude/
-schemas/
-src/generated_pb2/
+#schemas/
+
+#src/generated_pb2/
 scratch.pad

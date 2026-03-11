@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+message Invoice {
+  string invoice_id = 1;
+  string vendor = 2;
+  float total = 3;
+}

@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package io.confluent.examples.proto;
+
+message Product {
+  int32 product_id = 1;
+  string product_name = 2;
+}

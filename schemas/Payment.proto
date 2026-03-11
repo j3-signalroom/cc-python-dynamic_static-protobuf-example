@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message Payment {
+  float amount = 1;
+  string currency = 2;
+}

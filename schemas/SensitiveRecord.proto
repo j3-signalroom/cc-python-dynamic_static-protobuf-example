@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+import "confluent/meta.proto";
+
+message SensitiveRecord {
+  string id = 1;
+  string name = 2;
+  string ssn = 3 [(confluent.field_meta).tags = "PII"];
+  string email = 4 [(confluent.field_meta).tags = "PII"];
+  float amount = 5;
+}

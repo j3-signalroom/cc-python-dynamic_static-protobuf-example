@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package io.confluent.examples.proto;
+
+message Customer {
+  int64 customer_id = 1;
+  string customer_name = 2;
+  string customer_email = 3;
+  string customer_address = 4;
+}

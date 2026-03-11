@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package com.acme;
+
+import "other.proto";
+
+message MyRecord {
+  string f1 = 1;
+  OtherRecord f2 = 2;
+}
