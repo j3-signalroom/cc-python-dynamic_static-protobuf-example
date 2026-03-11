@@ -11,6 +11,8 @@ The project talks to a Confluent Cloud Schema Registry over the SR REST API and,
     + [1.1 Project layout](#11-project-layout)
     + [1.2 Architecture Overview](#12-architecture-overview)
     + [1.3 Requirements](#13-requirements)
+        - [1.3.1 Install uv](#131-install-uv)
+            + [1.3.1.1 Special mention](#1311-special-mention)
     + [1.4 Setup](#14-setup)
     + [1.5 Dependencies](#15-dependencies)
     + [1.6 Configuration](#16-configuration)
@@ -274,6 +276,20 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # or via Homebrew
 brew install uv
 ```
+
+##### **1.3.1.1 Special mention**
+You maybe asking yourself why `uv`?  Well, `uv` is an incredibly fast Python package installer and dependency resolver, written in [**Rust**](https://github.blog/developer-skills/programming-languages-and-frameworks/why-rust-is-the-most-admired-language-among-developers/), and designed to seamlessly replace `pip`, `pipx`, `poetry`, `pyenv`, `twine`, `virtualenv`, and more in your workflows. By prefixing `uv run` to a command, you're ensuring that the command runs in an optimal Python environment.
+
+Now, let's go a little deeper into the magic behind `uv run`:
+- When you use it with a file ending in `.py` or an HTTP(S) URL, `uv` treats it as a script and runs it with a Python interpreter. In other words, `uv run file.py` is equivalent to `uv run python file.py`. If you're working with a URL, `uv` even downloads it temporarily to execute it. Any inline dependency metadata is installed into an isolated, temporary environment—meaning zero leftover mess! When used with `-`, the input will be read from `stdin`, and treated as a Python script.
+- If used in a project directory, `uv` will automatically create or update the project environment before running the command.
+- Outside of a project, if there's a virtual environment present in your current directory (or any parent directory), `uv` runs the command in that environment. If no environment is found, it uses the interpreter's environment.
+
+So what does this mean when we put `uv run` before `python`? It means `uv` takes care of all the setup—fast and seamless—right in your local Docker container. If you think AI is magic, the work the folks at [Astral](https://astral.sh/) have done with `uv` is pure wizardry!
+
+Curious to learn more about [Astral](https://astral.sh/)'s `uv`? Check these out:
+- Documentation: Learn about [`uv`](https://docs.astral.sh/uv/).
+- Video: [`uv` IS THE FUTURE OF PYTHON PACKING!](https://www.youtube.com/watch?v=8UuW8o4bHbw)
 
 ---
 
@@ -576,8 +592,6 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 > All required flags must be provided; if a required flag is missing, the script exits with code `85`.
 
 In `--mode=full`, the app calls `ensure_topics()` via `AdminClient` to pre-create all five required topics before any produce calls.  Confluent Cloud mandates `replication_factor=3`; existing topics are silently skipped.  Schema registration and Kafka produce/consume are fully integrated in both modes, but only in `full` mode do the messages actually go to Kafka. In `schema-only` mode, the app still registers schemas and prints the resulting wire-format bytes to the console, but does not interact with Kafka at all.
-
-**Prerequisites:** AWS CLI v2, `aws2-wrap` (`pip install aws2-wrap`), and a configured AWS SSO profile with access to the KMS key.
 
 ---
 
