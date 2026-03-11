@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from google.protobuf.json_format import MessageToDict, ParseDict
 from dataclasses import dataclass, field
@@ -89,6 +90,17 @@ class ProtoMessage:
             lines.append("  }")
         lines.append("}")
         return "\n".join(lines)
+
+    def save_schema(self, directory: str | Path) -> Path:
+        """Write the proto3 schema string to *directory*/{file_name}.
+
+        Creates the directory if it does not exist.  Returns the path written.
+        """
+        dest = Path(directory)
+        dest.mkdir(parents=True, exist_ok=True)
+        out = dest / self.file_name
+        out.write_text(self.to_schema_string())
+        return out
 
     # ── Dynamic descriptor building ────────────────────────────────────────
 

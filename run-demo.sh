@@ -9,6 +9,7 @@
 #               --mode=<MODE>
 #               [--demo=<DEMO>]
 #               [--run-id=<RUN_ID>]
+#               [--save-schemas=<SAVE_DIR>]
 #
 #
 
@@ -53,6 +54,7 @@ AWS_PROFILE=""
 mode=""
 demo="all"
 run_id=""
+save_schemas_dir=""
 
 
 # Get the arguments passed by shift to remove the first word
@@ -71,6 +73,9 @@ do
         *"--run-id="*)
             arg_length=9
             run_id=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        *"--save-schemas="*)
+            arg_length=15
+            save_schemas_dir=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
         *)
             echo
             print_error "(Error Message 001)  You included an invalid argument: $arg"
@@ -111,10 +116,10 @@ aws sso login $AWS_PROFILE
 eval $(aws2-wrap $AWS_PROFILE --export)
 export AWS_REGION=$(aws configure get region $AWS_PROFILE)
 
-# Run the main.py script with the specified mode, demo, and/or run-id
+# Run the main.py script with the specified mode, demo, save-schemas directory, and/or run-id
 if [ -z "$run_id" ]
 then
-    uv run python src/main.py --mode $mode --demo $demo
+    uv run python src/main.py --mode $mode --demo $demo --save-schemas $save_schemas_dir
 else
-    uv run python src/main.py --mode $mode --demo $demo --run-id $run_id
+    uv run python src/main.py --mode $mode --demo $demo --run-id $run_id --save-schemas $save_schemas_dir
 fi

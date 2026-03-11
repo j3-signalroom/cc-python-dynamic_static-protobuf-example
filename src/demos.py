@@ -30,7 +30,7 @@ def section(title: str) -> None:
 
 
 # ── Demo 1 ─────────────────────────────────────────────────────────────────
-def demo_basic(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str) -> None:
+def demo_basic(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "") -> None:
     section("1 · Basic Protobuf Serializer & Deserializer")
 
     other_record = ProtoMessage(
@@ -54,6 +54,11 @@ def demo_basic(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str) ->
     logger.info(other_record.to_schema_string())
     logger.info("\n── MyRecord.proto ──")
     logger.info(my_record.to_schema_string())
+
+    if save_dir:
+        for msg in (other_record, my_record):
+            path = msg.save_schema(save_dir)
+            logger.info(f"  Saved → {path}")
 
     # Register referenced schema first (dependency order)
     logger.info("\nRegistering schemas …")
@@ -132,7 +137,7 @@ def demo_delete_protection(sr: SchemaRegistryClient, run_id: str) -> None:
 
 
 # ── Demo 3 ─────────────────────────────────────────────────────────────────
-def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str) -> None:
+def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "") -> None:
     section("3 · Schema Evolution (Backward Compatibility)")
 
     subject = f"transactions-proto-{run_id}-value"
@@ -168,6 +173,15 @@ def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str
     logger.info("\n── Schema v2 (customer_id added) ──")
     logger.info(v2.to_schema_string())
 
+    if save_dir:
+        from pathlib import Path
+        evo_dir = Path(save_dir) / "evolution"
+        v1.file_name = "MyRecord_v1.proto"
+        v2.file_name = "MyRecord_v2.proto"
+        for msg in (v1, v2):
+            path = msg.save_schema(evo_dir)
+            logger.info(f"  Saved → {path}")
+
     # Test compatibility before registering
     try:
         compat = sr.test_compatibility(subject, v2.to_schema_string())
@@ -197,7 +211,7 @@ def demo_evolution(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str
 
 
 # ── Demo 4 ─────────────────────────────────────────────────────────────────
-def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str) -> None:
+def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, save_dir: str = "") -> None:
     section("4 · Multiple Event Types in the Same Topic (oneOf)")
 
     customer = ProtoMessage(
@@ -239,6 +253,11 @@ def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str) ->
 
     logger.info("\nWrapper schema (AllTypes):")
     logger.info(all_types.to_schema_string())
+
+    if save_dir:
+        for msg in (customer, product, order, all_types):
+            path = msg.save_schema(save_dir)
+            logger.info(f"  Saved → {path}")
 
     cust_subj = f"Customer-{run_id}.proto"
     prod_subj = f"Product-{run_id}.proto"
@@ -290,7 +309,7 @@ def demo_oneof(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str) ->
 
 
 # ── Demo 5 ─────────────────────────────────────────────────────────────────
-def demo_null_handling(sr: SchemaRegistryClient, run_id: str) -> None:
+def demo_null_handling(sr: SchemaRegistryClient, run_id: str, save_dir: str = "") -> None:
     section("5 · Null-Value Handling with Optional Fields (recommended)")
 
     schema = ProtoMessage(
@@ -304,6 +323,10 @@ def demo_null_handling(sr: SchemaRegistryClient, run_id: str) -> None:
 
     logger.info("\nSchema with optional fields:")
     logger.info(schema.to_schema_string())
+
+    if save_dir:
+        path = schema.save_schema(save_dir)
+        logger.info(f"  Saved → {path}")
 
     topic = f"nullables-{run_id}"
     ser   = KafkaProtobufSerializer(sr)
@@ -388,7 +411,7 @@ def demo_types(sr: SchemaRegistryClient) -> None:
 
 
 # ── Demo 8 ─────────────────────────────────────────────────────────────────
-def demo_strategies(sr: SchemaRegistryClient, run_id: str) -> None:
+def demo_strategies(sr: SchemaRegistryClient, run_id: str, save_dir: str = "") -> None:
     section("8 · Subject Name Strategies")
 
     schema = ProtoMessage(
@@ -396,6 +419,10 @@ def demo_strategies(sr: SchemaRegistryClient, run_id: str) -> None:
         fields=[ProtoField("amount", "float", 1), ProtoField("currency", "string", 2)],
     )
     topic = f"payments-{run_id}"
+
+    if save_dir:
+        path = schema.save_schema(save_dir)
+        logger.info(f"  Saved → {path}")
 
     configs: list[tuple[str, str]] = [
         ("TopicNameStrategy",       f"{topic}-value"),
@@ -416,7 +443,7 @@ def demo_strategies(sr: SchemaRegistryClient, run_id: str) -> None:
 
 
 # ── Demo 9 ─────────────────────────────────────────────────────────────────
-def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aws_kms_key_arn: str) -> None:
+def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aws_kms_key_arn: str, save_dir: str = "") -> None:
     section("9 · Client-Side Field Level Encryption (CSFLE)")
 
     # ── 1. Define a schema with sensitive fields ──────────────────────
@@ -433,6 +460,10 @@ def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aw
 
     logger.info("\nSchema with sensitive fields:")
     logger.info(sensitive_record.to_schema_string())
+
+    if save_dir:
+        path = sensitive_record.save_schema(save_dir)
+        logger.info(f"  Saved → {path}")
 
     # ── 2. CSFLE metadata: tag fields for encryption ──────────────────
     metadata = {

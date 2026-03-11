@@ -101,7 +101,7 @@ flowchart TB
     %% ── CLI ────────────────────────────────────────────────────────────
     subgraph CLI["CLI  (main.py · utilities.py)"]
         direction LR
-        ARGS["parse_args()\n--mode  --demo  --run-id"]
+        ARGS["parse_args()\n--mode  --demo  --run-id\n--save-schemas"]
         CFG["get_config()\nreads os.environ"]
         ARGS --> CFG
     end
@@ -411,6 +411,11 @@ prevents name conflicts between schema-evolution versions of the same message.
 `json_format.MessageToDict(..., preserving_proto_field_name=True)`. Both produce
 and consume real Protobuf binary — no JSON stand-in.
 
+**Schema export** — `save_schema(directory)` writes the proto3 schema string to
+`directory/{file_name}`, creating the directory if needed. This lets you export
+dynamic schemas as standard `.proto` files for use with `protoc` or other
+language toolchains.
+
 #### **1.8.3 `KafkaProtobufSerializer` (`kafka_protobuf_serdes.py`)**
 
 Mirrors the Java `KafkaProtobufSerializer`. Resolves the SR subject from the
@@ -481,14 +486,16 @@ Schema Registry code. Only used when running with `--mode full`.
 |---|---|
 | `setup_logging(log_file?)` | Reads `[tool.logging]` from `pyproject.toml` via `tomllib` and applies it with `logging.config.dictConfig()`. Falls back to a basic dual-handler setup (file + console) if the config is absent. Returns the root logger. |
 | `get_config()` | Reads the seven environment variables (`BOOTSTRAP_SERVERS`, `KAFKA_API_KEY`, …, `AWS_KMS_KEY_ARN`) and returns `(cfg_dict, missing_keys)`. |
-| `parse_args()` | Defines the `--mode`, `--demo`, and `--run-id` CLI flags via `argparse` and returns the parsed `Namespace`. |
+| `parse_args()` | Defines the `--mode`, `--demo`, `--run-id`, and `--save-schemas` CLI flags via `argparse` and returns the parsed `Namespace`. |
 
 #### **1.8.8 `demos.py`**
 
 Contains all nine demo functions extracted from the former monolithic `main.py`.
 Each function receives a `SchemaRegistryClient`, an optional Kafka config dict
-(for `--mode full`), and/or the `run_id` suffix. The module has its own logger
-via `setup_logging()`.
+(for `--mode full`), the `run_id` suffix, and an optional `save_dir` path.
+When `save_dir` is set (via `--save-schemas`), each demo writes its `.proto`
+schema files to the specified directory. The module has its own logger via
+`setup_logging()`.
 
 | Function | Demo |
 |---|---|
@@ -579,7 +586,8 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 ./run-demo.sh --profile=<SSO_PROFILE_NAME> \
               --mode=<schema-only|full> \
               [--demo=<all|basic|delete|evolution|oneof|null|compat|types|strategies|csfle>] \
-              [--run-id=<any string, e.g. "test1">]
+              [--run-id=<any string, e.g. "test1">] \
+              [--save-schemas=<directory>]
 ```
 
 | Argument | Required | Choice | Default | Description |
@@ -588,6 +596,7 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 | `--mode` | ✅ | `schema-only`, `full` | `schema-only` | SR-only or full Kafka round-trip |
 | `--demo` | ❌ | `all` `basic` `delete` `evolution` `oneof` `null` `compat` `types` `strategies` `csfle` | `all` | Which demo to run |
 | `--run-id` | ❌ | any string | random 8-char UUID prefix | Appended to every topic and subject name to prevent collisions across runs |
+| `--save-schemas` | ❌ | directory path | disabled | Save generated `.proto` schema files to the given directory (created if needed) |
 
 > All required flags must be provided; if a required flag is missing, the script exits with code `85`.
 
@@ -711,7 +720,7 @@ done
 
 - **No standalone SR Python library.** There is no `confluent-schema-registry`
   PyPI package. `SchemaRegistryClient` calls the REST API directly via
-  `requests` — this is the correct approach for Python.
+  `requests` — this is the correct approach for Python as recommended by Confluent.  Besides, the code caches schemas by ID in a dict to avoid redundant `GET /schemas/ids/{id}` calls.  Moreover, since the code is already caching schemas by ID, HTTP calls are only made on cache misses, so the performance difference between a hand-rolled client and a hypothetical official library would be negligible.
 - **Confluent Cloud requires `replication_factor=3`.** `ensure_topics()` always
   passes this value; any other value will be rejected by the cluster.
 - **`BACKWARD_TRANSITIVE` is the right default for Protobuf.** Unlike Avro,

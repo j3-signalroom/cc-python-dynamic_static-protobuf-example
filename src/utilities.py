@@ -96,6 +96,9 @@ def parse_args() -> argparse.Namespace:
 
             Single demo:
               python confluent_protobuf_demo.py --mode schema-only --demo evolution
+
+            Save .proto schemas to disk:
+              python confluent_protobuf_demo.py --mode schema-only --save-schemas ./schemas
         """),
     )
     p.add_argument("--mode", choices=["schema-only", "full"], default="schema-only")
@@ -109,5 +112,11 @@ def parse_args() -> argparse.Namespace:
         "--run-id",
         default=str(uuid.uuid4())[:8],
         help="Unique suffix for topic/subject names (prevents collisions). Default: random.",
+    )
+    p.add_argument(
+        "--save-schemas",
+        metavar="DIR",
+        default="",
+        help="Save generated .proto schemas to DIR (created if needed). Default: disabled.",
     )
     return p.parse_args()

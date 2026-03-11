@@ -63,6 +63,7 @@ def main() -> None:
 
     run_id    = args.run_id
     kafka_cfg = cfg if args.mode == "full" else None
+    save_dir  = args.save_schemas or ""
     sr        = SchemaRegistryClient(cfg["sr_url"], cfg["sr_api_key"], cfg["sr_api_secret"])
 
     logger.info("=" * 100)
@@ -71,6 +72,8 @@ def main() -> None:
     logger.info(f"  SR:    {cfg['sr_url']}")
     if kafka_cfg:
         logger.info(f"  Kafka: {cfg['bootstrap_servers']}")
+    if save_dir:
+        logger.info(f"  Schemas → {save_dir}")
     logger.info("=" * 100)
 
     # Pre-create all topics required by the demos before any produce calls
@@ -89,19 +92,19 @@ def main() -> None:
     run_all = args.demo == "all"
 
     if run_all or args.demo == "basic":
-        demo_basic(sr, kafka_cfg, run_id)
+        demo_basic(sr, kafka_cfg, run_id, save_dir)
 
     if run_all or args.demo == "delete":
         demo_delete_protection(sr, run_id)
 
     if run_all or args.demo == "evolution":
-        demo_evolution(sr, kafka_cfg, run_id)
+        demo_evolution(sr, kafka_cfg, run_id, save_dir)
 
     if run_all or args.demo == "oneof":
-        demo_oneof(sr, kafka_cfg, run_id)
+        demo_oneof(sr, kafka_cfg, run_id, save_dir)
 
     if run_all or args.demo == "null":
-        demo_null_handling(sr, run_id)
+        demo_null_handling(sr, run_id, save_dir)
 
     if run_all or args.demo == "compat":
         demo_compatibility(sr)
@@ -110,10 +113,10 @@ def main() -> None:
         demo_types(sr)
 
     if run_all or args.demo == "strategies":
-        demo_strategies(sr, run_id)
+        demo_strategies(sr, run_id, save_dir)
 
     if run_all or args.demo == "csfle":
-        demo_csfle(sr, kafka_cfg, run_id, cfg.get("aws_kms_key_arn", ""))
+        demo_csfle(sr, kafka_cfg, run_id, cfg.get("aws_kms_key_arn", ""), save_dir)
 
     logger.info(f"\n{'─' * 100}")
     logger.info(f"  Done. All topics/subjects use suffix '-{run_id}'.")

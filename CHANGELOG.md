@@ -8,6 +8,7 @@ The format is base on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), 
 ### Added
 - Issue [`#9`](https://github.com/j3-signalroom/cc-python-protobuf-csfle-example/issues/9)
 - Issue [`#10`](https://github.com/j3-signalroom/cc-python-protobuf-csfle-example/issues/10)
+- Issue [`#19`](https://github.com/j3-signalroom/cc-python-protobuf-csfle-example/issues/19)
 
 ### Changed
 - Issue [`#11`](https://github.com/j3-signalroom/cc-python-protobuf-csfle-example/issues/11)
