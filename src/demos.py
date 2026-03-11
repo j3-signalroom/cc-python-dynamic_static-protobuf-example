@@ -575,6 +575,7 @@ def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aw
         "email":  "alice@example.com",
         "amount": 500.0,
     }
+
     logger.info(f"\nOriginal data:  {original}")
 
     ser_ctx      = SerializationContext(topic, MessageField.VALUE)
