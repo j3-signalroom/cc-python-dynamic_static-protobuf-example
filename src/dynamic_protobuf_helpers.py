@@ -42,6 +42,7 @@ class ProtoField:
     number: int
     optional: bool = False
     repeated: bool = False
+    tags: str = ""
 
 
 @dataclass
@@ -70,23 +71,31 @@ class ProtoMessage:
         _message_registry[self.name] = self    # register for cross-schema type resolution
 
     def to_schema_string(self) -> str:
+        all_fields = self.fields + [f for fs in self.oneofs.values() for f in fs]
+        needs_meta  = any(f.tags for f in all_fields)
+
         lines = [f'syntax = "{self.syntax}";', ""]
         if self.package:
             lines += [f"package {self.package};", ""]
-        for imp in self.imports:
+        all_imports = list(self.imports)
+        if needs_meta and "confluent/meta.proto" not in all_imports:
+            all_imports = ["confluent/meta.proto"] + all_imports
+        for imp in all_imports:
             lines.append(f'import "{imp}";')
-        if self.imports:
+        if all_imports:
             lines.append("")
         lines.append(f"message {self.name} {{")
         for f in self.fields:
             qualifier = (
                 "optional " if f.optional else ("repeated " if f.repeated else "")
             )
-            lines.append(f"  {qualifier}{f.type} {f.name} = {f.number};")
+            tag_opt = f' [(confluent.field_meta).tags = "{f.tags}"]' if f.tags else ""
+            lines.append(f"  {qualifier}{f.type} {f.name} = {f.number}{tag_opt};")
         for oneof_name, oneof_fields in self.oneofs.items():
             lines.append(f"  oneof {oneof_name} {{")
             for f in oneof_fields:
-                lines.append(f"    {f.type} {f.name} = {f.number};")
+                tag_opt = f' [(confluent.field_meta).tags = "{f.tags}"]' if f.tags else ""
+                lines.append(f"    {f.type} {f.name} = {f.number}{tag_opt};")
             lines.append("  }")
         lines.append("}")
         return "\n".join(lines)

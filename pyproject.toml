@@ -5,14 +5,20 @@ description = "Confluent Cloud Python Dynamic or Static Protobuf Example"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "attrs>=25.4.0",
+    "authlib>=1.6.9",
     "aws2-wrap>=1.4.0",
     "boto3>=1.38.0",
-    "confluent-kafka>=2.13.2",
+    "cachetools>=7.0.5",
+    "confluent-kafka[schemaregistry,protobuf]>=2.13.2",
     "cryptography>=44.0.0",
     "dotenv>=0.9.9",
-    "protobuf>=7.34.0",
+    "googleapis-common-protos>=1.56.1",
+    "httpx>=0.28.1",
+    "protobuf>=6.30.2,<7.0",
     "python-dotenv>=1.2.2",
     "requests>=2.32.5",
+    "tink>=1.14.1",
 ]
 
 [tool.setuptools]

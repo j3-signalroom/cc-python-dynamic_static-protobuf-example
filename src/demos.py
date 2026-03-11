@@ -9,7 +9,6 @@ from schema_registry_client import SchemaRegistryClient
 from dynamic_protobuf_helpers import ProtoMessage, ProtoField
 from kafka_protobuf_serdes import KafkaProtobufSerializer, KafkaProtobufDeserializer
 from kafka_helpers import kafka_produce, kafka_consume_one
-from field_encryption import FieldEncryptor, get_encrypted_fields
 
 
 __copyright__  = "Copyright (c) 2026 Jeffrey Jonathan Jennings"
@@ -474,9 +473,21 @@ def demo_strategies(sr: SchemaRegistryClient, run_id: str, save_dir: str = "", u
 
 # ── Demo 9 ─────────────────────────────────────────────────────────────────
 def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aws_kms_key_arn: str, save_dir: str = "", use_protoc: bool = False) -> None:
-    section("9 · Client-Side Field Level Encryption (CSFLE)")
+    section("9 · Client-Side Field Level Encryption (CSFLE) — Confluent Native")
 
-    # ── 1. Define a schema with sensitive fields ──────────────────────
+    import os
+    from confluent_kafka.schema_registry import SchemaRegistryClient as ConfluentSRClient
+    from confluent_kafka.schema_registry.protobuf import ProtobufSerializer, ProtobufDeserializer
+    from confluent_kafka.schema_registry.rules.encryption.awskms.aws_driver import AwsKmsDriver
+    from confluent_kafka.schema_registry.rules.encryption.encrypt_executor import FieldEncryptionExecutor
+    from confluent_kafka.serialization import MessageField, SerializationContext
+    from google.protobuf.json_format import ParseDict, MessageToDict
+
+    # ── 1. Register Confluent CSFLE drivers ───────────────────────────
+    AwsKmsDriver.register()
+    FieldEncryptionExecutor.register()
+
+    # ── 2. Define a schema with sensitive fields ───────────────────────
     if use_protoc:
         from compiled_protobuf_helpers import load_compiled_message
         sensitive_record = load_compiled_message("SensitiveRecord.proto", "SensitiveRecord")
@@ -484,11 +495,11 @@ def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aw
         sensitive_record = ProtoMessage(
             name="SensitiveRecord",
             fields=[
-                ProtoField("id",    "string", 1),
-                ProtoField("name",  "string", 2),
-                ProtoField("ssn",   "string", 3),
-                ProtoField("email", "string", 4),
-                ProtoField("amount", "float", 5),
+                ProtoField("id",     "string", 1),
+                ProtoField("name",   "string", 2),
+                ProtoField("ssn",    "string", 3, tags="PII"),
+                ProtoField("email",  "string", 4, tags="PII"),
+                ProtoField("amount", "float",  5),
             ],
         )
 
@@ -499,59 +510,64 @@ def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aw
         path = sensitive_record.save_schema(save_dir)
         logger.info(f"  Saved → {path}")
 
-    # ── 2. CSFLE metadata: tag fields for encryption ──────────────────
-    metadata = {
-        "properties": {
-            "SensitiveRecord.ssn.tags":   "PII",
-            "SensitiveRecord.email.tags": "PII",
-        }
-    }
-
     kek_name = f"demo-kek-{run_id}"
+    topic    = f"csfle-{run_id}"
+    subject  = f"{topic}-value"
 
+    # ── 3. CSFLE rule set: tags are embedded in the schema via
+    #       (confluent.field_meta).tags = "PII", so no separate metadata needed.
     rule_set = {
         "domainRules": [
             {
-                "name":  "encryptPII",
-                "kind":  "TRANSFORM",
-                "type":  "ENCRYPT",
-                "mode":  "WRITEREAD",
-                "tags":  ["PII"],
+                "name":      "encrypt-pii",
+                "kind":      "TRANSFORM",
+                "type":      "ENCRYPT",
+                "mode":      "WRITEREAD",
+                "tags":      ["PII"],
                 "params": {
                     "encrypt.kek.name":   kek_name,
                     "encrypt.kms.type":   "aws-kms",
                     "encrypt.kms.key.id": aws_kms_key_arn,
                 },
+                "onFailure": "ERROR,NONE",
+                "disabled":  False,
             }
         ]
     }
 
-    logger.info(f"\nMetadata (field tags):\n{json.dumps(metadata, indent=2)}")
     logger.info(f"\nRuleSet (encryption rules):\n{json.dumps(rule_set, indent=2)}")
 
-    tagged_fields = get_encrypted_fields(metadata, rule_set)
-    logger.info(f"\nFields targeted for encryption: {tagged_fields}")
+    # ── 4. Ensure PII tag exists, then register KEK + schema with rules ──
+    sr.create_tag("PII")
 
-    # ── 3. Register KEK in the DEK Registry and create FieldEncryptor ─
     try:
         sr.create_kek(kek_name, "aws-kms", aws_kms_key_arn)
+        logger.info(f"  KEK '{kek_name}' created")
     except RuntimeError:
         logger.info(f"  KEK '{kek_name}' already exists — reusing")
 
-    encryptor = FieldEncryptor(sr, kek_name=kek_name, kms_key_id=aws_kms_key_arn)
+    sr.register(subject, sensitive_record.to_schema_string(), rule_set=rule_set)
 
-    topic = f"csfle-{run_id}"
+    # ── 5. Build Confluent native SR client for ProtobufSerializer ─────
+    confluent_sr = ConfluentSRClient({
+        'url': os.environ['SCHEMA_REGISTRY_URL'],
+        'basic.auth.user.info': f"{os.environ['SR_API_KEY']}:{os.environ['SR_API_SECRET']}",
+    })
 
-    # Serializer WITH encryption
-    ser = KafkaProtobufSerializer(sr, field_encryptor=encryptor)
-    # Deserializer WITHOUT encryption (reads ciphertext)
-    deser_raw = KafkaProtobufDeserializer(sr, specific_type=sensitive_record)
-    # Deserializer WITH encryption (auto-decrypts)
-    deser_dec = KafkaProtobufDeserializer(
-        sr, specific_type=sensitive_record, field_encryptor=encryptor,
-    )
+    # ── 6. Get protobuf message class ─────────────────────────────────
+    msg_cls = sensitive_record._message_class if use_protoc else sensitive_record.message_class()
 
-    # ── 4. Serialize (encrypts PII fields) ────────────────────────────
+    # ── 7. Create Confluent native serializer / deserializer ──────────
+    # Schema is already registered — fetch latest and apply its rules
+    ser_conf = {
+        'auto.register.schemas': False,
+        'use.latest.version':    True,
+        'use.deprecated.format': False,
+    }
+    protobuf_serializer   = ProtobufSerializer(msg_cls, confluent_sr, ser_conf)
+    protobuf_deserializer = ProtobufDeserializer(msg_cls, {'use.deprecated.format': False}, confluent_sr)
+
+    # ── 8. Serialize — FieldEncryptionExecutor encrypts PII fields ────
     original = {
         "id":     "user-001",
         "name":   "Alice Smith",
@@ -561,54 +577,47 @@ def demo_csfle(sr: SchemaRegistryClient, kafka_cfg: dict | None, run_id: str, aw
     }
     logger.info(f"\nOriginal data:  {original}")
 
-    wire = ser.serialize(
-        topic, sensitive_record, original,
-        metadata=metadata, rule_set=rule_set,
-    )
-    logger.info(f"Wire bytes:     {len(wire)} bytes")
+    ser_ctx      = SerializationContext(topic, MessageField.VALUE)
+    msg_instance = ParseDict(original, msg_cls())
+    wire         = protobuf_serializer(msg_instance, ser_ctx)
+    logger.info(f"Wire bytes:     {len(wire)} bytes  (ssn + email AES-256-GCM encrypted)")
 
-    # ── 5. Deserialize WITHOUT decryption → encrypted values visible ──
-    encrypted_view = deser_raw.deserialize(wire)
-    logger.info(f"\nWithout decryption: {encrypted_view}")
-    logger.info("  ↑ 'ssn' and 'email' are AES-256-GCM ciphertext (base64)")
+    # ── 9. Deserialize — FieldEncryptionExecutor decrypts PII fields ──
+    deser_ctx      = SerializationContext(topic, MessageField.VALUE)
+    decrypted_msg  = protobuf_deserializer(wire, deser_ctx)
+    decrypted_view = MessageToDict(decrypted_msg, preserving_proto_field_name=True)
+    logger.info(f"\nDecrypted:      {decrypted_view}")
+    logger.info("  ↑ 'ssn' and 'email' restored to plaintext by WRITEREAD rule")
 
-    # ── 6. Deserialize WITH decryption → plaintext restored ───────────
-    decrypted_view = deser_dec.deserialize(wire)
-    logger.info(f"\nWith decryption:    {decrypted_view}")
-    logger.info("  ↑ 'ssn' and 'email' restored to plaintext")
-
-    # ── 7. Kafka round-trip (if --mode full) ──────────────────────────
+    # ── 10. Kafka round-trip (if --mode full) ─────────────────────────
     if kafka_cfg:
         kafka_produce(kafka_cfg, topic, "user-001", wire)
         raw = kafka_consume_one(kafka_cfg, topic, f"demo-csfle-{run_id}")
         if raw:
-            enc = deser_raw.deserialize(raw)
-            dec = deser_dec.deserialize(raw)
-            logger.info(f"\nKafka (encrypted): {enc}")
-            logger.info(f"Kafka (decrypted): {dec}")
+            dec = protobuf_deserializer(raw, SerializationContext(topic, MessageField.VALUE))
+            logger.info(f"\nKafka decrypted: {MessageToDict(dec, preserving_proto_field_name=True)}")
 
-    # ── 8. Key architecture notes ─────────────────────────────────────
+    # ── 11. Architecture notes ────────────────────────────────────────
     logger.info("""
   ┌────────────────────────────────────────────────────────────────────┐
-  │  CSFLE Architecture (AWS KMS)                                      │
+  │  Confluent CSFLE Architecture (AWS KMS)                            │
   │                                                                    │
   │  Schema Registry stores:                                           │
   │    • schema   — Protobuf definition (original field types)         │
   │    • metadata — field-level tags  (e.g. "ssn" → PII)               │
-  │    • ruleSet  — ENCRYPT transform rules matching tags              │
+  │    • ruleSet  — ENCRYPT WRITEREAD domain rule matching PII tags    │
   │                                                                    │
-  │  DEK Registry (part of Schema Registry) stores:                    │
-  │    • KEK metadata — name, KMS type, KMS key ARN                    │
-  │    • DEK entries  — encrypted data keys per subject                │
+  │  ProtobufSerializer + FieldEncryptionExecutor (on write):          │
+  │    1. Fetch schema + rules from SR (use.latest.version=true)       │
+  │    2. Identify PII-tagged fields from schema metadata              │
+  │    3. Encrypt field values via AWS KMS + DEK Registry              │
+  │    4. Serialize to Confluent wire-format bytes                     │
   │                                                                    │
-  │  AWS KMS provides:                                                 │
-  │    • KEK management — symmetric encrypt/decrypt key                │
-  │    • DEK unwrapping — boto3 kms.decrypt() for cached DEKs          │
-  │                                                                    │
-  │  Flow:                                                             │
-  │    1. Register KEK in DEK Registry (name + ARN)                    │
-  │    2. First encrypt → create_dek() → plaintext DEK returned        │
-  │    3. Subsequent → get_dek() → encrypted DEK → KMS decrypt         │
+  │  ProtobufDeserializer + FieldEncryptionExecutor (on read):         │
+  │    1. Strip Confluent wire-format header → schema_id               │
+  │    2. Fetch schema + WRITEREAD rules from SR                       │
+  │    3. Decrypt field values via AWS KMS + DEK Registry              │
+  │    4. Return decrypted protobuf message                            │
   └────────────────────────────────────────────────────────────────────┘""")
 
 

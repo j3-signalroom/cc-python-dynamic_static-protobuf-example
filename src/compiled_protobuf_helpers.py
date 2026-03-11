@@ -26,6 +26,38 @@ logger = setup_logging()
 GENERATED_DIR = "src/generated_pb2"
 
 
+def _patch_pool_duplicate(pb2_path: Path, proto_file_name: str) -> None:
+    """Wrap AddSerializedFile in a generated _pb2.py to survive duplicate pool entries.
+
+    confluent_kafka registers confluent/meta.proto in the global descriptor pool when
+    its encryption modules are first imported.  Our generated meta_pb2.py then fails
+    with TypeError("duplicate file name …").  This patch makes it fall back to
+    FindFileByName() so the descriptor is always available regardless of import order.
+    Idempotent — safe to call on an already-patched file.
+    """
+    if not pb2_path.exists():
+        return
+    content = pb2_path.read_text()
+    marker = "_descriptor_pool.Default().AddSerializedFile("
+    if f"try:\n    DESCRIPTOR = {marker}" in content:
+        return  # already patched
+    if f"DESCRIPTOR = {marker}" not in content:
+        return  # unexpected format — skip
+    lines = content.splitlines(keepends=True)
+    result = []
+    for line in lines:
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped.startswith(f"DESCRIPTOR = {marker}"):
+            result.append(f"{indent}try:\n")
+            result.append(f"{indent}    {stripped}")
+            result.append(f"{indent}except TypeError:  # already registered (e.g. by confluent_kafka)\n")
+            result.append(f"{indent}    DESCRIPTOR = _descriptor_pool.Default().FindFileByName({proto_file_name!r})\n")
+        else:
+            result.append(line)
+    pb2_path.write_text("".join(result))
+
+
 def compile_protos(proto_dir: str = "schemas", output_dir: str = GENERATED_DIR) -> None:
     """Compile all .proto files under *proto_dir* into Python _pb2.py stubs.
 
@@ -62,6 +94,12 @@ def compile_protos(proto_dir: str = "schemas", output_dir: str = GENERATED_DIR) 
     for subdir in out.rglob("*"):
         if subdir.is_dir():
             (subdir / "__init__.py").touch()
+
+    # confluent_kafka's encryption modules register confluent/meta.proto in the
+    # global descriptor pool before our generated meta_pb2.py is imported.
+    # Patch the generated file so AddSerializedFile falls back to FindFileByName
+    # when the descriptor is already present, avoiding "duplicate file name".
+    _patch_pool_duplicate(out / "confluent" / "meta_pb2.py", "confluent/meta.proto")
 
     logger.info(f"Compiled {len(proto_files)} .proto file(s) → {output_dir}/")
 

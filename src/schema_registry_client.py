@@ -170,6 +170,43 @@ class SchemaRegistryClient:
         scope = f"subject '{subject}'" if subject else "global"
         logger.info(f"  [SR] Set compatibility={level} for {scope}")
 
+    # ── Catalog / Tags (CSFLE) ────────────────────────────────────────────
+
+    def create_tag(self, tag_name: str) -> None:
+        """POST /catalog/v1/types/tagdefs — create a tag definition if absent.
+
+        Idempotent: a 409 Conflict (tag already exists) is silently ignored.
+        The Catalog API requires Content-Type: application/json (not the SR-specific type).
+        """
+        body = [{"name": tag_name, "entityTypes": ["cf_entity"]}]
+        r = self._session.post(
+            self.url + "/catalog/v1/types/tagdefs",
+            json=body,
+            headers={"Content-Type": "application/json"},
+        )
+        logger.info(f"  [Catalog] create_tag '{tag_name}' → HTTP {r.status_code}: {r.text[:300]}")
+        if r.status_code == 409:
+            logger.info(f"  [Catalog] Tag '{tag_name}' already exists — reusing")
+            return
+        # Catalog API returns 200 with per-item errors in the body on partial failure.
+        # Error code 4090001 means the tag already exists — treat as idempotent.
+        try:
+            items = r.json()
+            for item in items if isinstance(items, list) else []:
+                err = item.get("error")
+                if err:
+                    if err.get("error_code") == 4090001:
+                        logger.info(f"  [Catalog] Tag '{tag_name}' already exists — reusing")
+                        return
+                    raise RuntimeError(
+                        f"Tag '{tag_name}' creation failed: "
+                        f"{err.get('message', err)}"
+                    )
+        except (ValueError, TypeError):
+            pass
+        self._raise(r)
+        logger.info(f"  [Catalog] Created tag '{tag_name}'")
+
     # ── DEK Registry (CSFLE) ─────────────────────────────────────────────
 
     def create_kek(
