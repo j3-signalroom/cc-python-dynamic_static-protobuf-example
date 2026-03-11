@@ -800,13 +800,28 @@ subject name strategies.
 
 #### **2.1.9 Demo 9 — Client-Side Field Level Encryption (`--demo csfle`)**
 
-Demonstrates Confluent CSFLE using AES-256-GCM field-level encryption with
-AWS KMS. Registers a KEK in the DEK Registry, defines a `SensitiveRecord`
-schema with PII fields (`ssn`, `email`), tags them via schema metadata, and
-encrypts them before Protobuf serialization using `FieldEncryptor`. Shows
-three views: original plaintext, deserialized without decryption (ciphertext
-visible), and deserialized with decryption (plaintext restored). Requires
-`AWS_KMS_KEY_ARN` and valid AWS credentials.
+Demonstrates Confluent-native CSFLE using the **`confluent-kafka`** library's
+`ProtobufSerializer` / `ProtobufDeserializer` with the `FieldEncryptionExecutor`
+rule engine and `AwsKmsDriver`. This is the fully integrated Confluent approach —
+encryption/decryption is handled transparently by the serializer/deserializer
+rather than by the custom `FieldEncryptor` used in other demos.
+
+The demo proceeds in eleven steps:
+
+1. **Register drivers** — `AwsKmsDriver.register()` + `FieldEncryptionExecutor.register()`
+2. **Build schema** — a `SensitiveRecord` with `ssn` and `email` fields tagged `PII` via `ProtoField(tags="PII")`
+3. **Define rule set** — an `ENCRYPT / WRITEREAD` domain rule matching `PII` tags, pointing to the KEK and AWS KMS key ID
+4. **Register tag + KEK** — `sr.create_tag("PII")` (idempotent) then `sr.create_kek()` to register the Key Encryption Key in the DEK Registry
+5. **Register schema with rules** — `sr.register(subject, schema, rule_set=rule_set)` embeds the encryption rule into the SR subject
+6. **Instantiate Confluent SR client** — a second `SchemaRegistryClient` from `confluent_kafka.schema_registry` (required by the Confluent SerDes)
+7. **Build SerDes** — `ProtobufSerializer(msg_cls, confluent_sr, {'auto.register.schemas': False, 'use.latest.version': True})` and matching `ProtobufDeserializer`
+8. **Serialize** — `protobuf_serializer(msg_instance, SerializationContext(...))` — `FieldEncryptionExecutor` automatically fetches the DEK from the DEK Registry (creating it via KMS on first call), encrypts `ssn` and `email` with AES-256-GCM, and emits Confluent wire-format bytes
+9. **Deserialize** — `protobuf_deserializer(wire, SerializationContext(...))` — `FieldEncryptionExecutor` fetches and decrypts the DEK, restores plaintext
+10. **Kafka round-trip** — produce/consume the wire bytes in `--mode full`
+11. **Architecture notes** — printed to log showing the full CSFLE flow
+
+Requires `AWS_KMS_KEY_ARN` and valid AWS credentials (`boto3`-compatible:
+env vars, `~/.aws/credentials`, IAM role, or AWS SSO via `run-demo.sh`).
 
 **Topics:** `csfle-{run_id}`
 **Subjects:** `csfle-{run_id}-value`
