@@ -9,6 +9,7 @@ The format is base on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), 
 - Issue [`#23`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/23)
 - Issue [`#27`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/27)
 - Issue [`#34`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/34)
+- Issue [`#40`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/40)
 
 ### Changed
 - Issue [`#25`](https://github.com/j3-signalroom/cc-python-dynamic_static-protobuf-example/issues/25)

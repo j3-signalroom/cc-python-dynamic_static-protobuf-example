@@ -125,7 +125,7 @@ def main() -> None:
     if run_all or args.demo == "strategies":
         demo_strategies(sr, run_id, save_dir, use_protoc)
 
-    if run_all or args.demo == "csfle":
+    if (run_all and args.mode == "full") or args.demo == "csfle":
         demo_csfle(sr, kafka_cfg, run_id, cfg.get("aws_kms_key_arn", ""), save_dir, use_protoc)
 
     if run_all or args.demo == "no-auto-register":

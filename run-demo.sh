@@ -5,8 +5,8 @@
 # Run a specific demo script for the project using the specified AWS SSO profile.
 #
 # *** Script Syntax ***
-# ./run-demo.sh --profile=<SSO_PROFILE_NAME>
-#               --mode=<MODE>
+# ./run-demo.sh --mode=<MODE>
+#               [--profile=<SSO_PROFILE_NAME>]
 #               [--demo=<DEMO>]
 #               [--run-id=<RUN_ID>]
 #               [--save-schemas=<SAVE_DIR>]
@@ -47,7 +47,7 @@ TERRAFORM_DIR="$SCRIPT_DIR/terraform"
 
 print_info "Terraform Directory: $TERRAFORM_DIR"
 
-argument_list="--profile=<SSO_PROFILE_NAME> --mode=<MODE>"
+argument_list="--mode=<MODE>"
 
 
 # Default required variables
@@ -84,41 +84,33 @@ do
             echo
             print_error "(Error Message 001)  You included an invalid argument: $arg"
             echo
-            print_error "Usage:  Require two argument ---> `basename $0` $argument_list"
+            print_error "Usage:  Require one argument ---> `basename $0` $argument_list"
             echo
             exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
             ;;
     esac
 done
 
-# Check required --profile argument was supplied
-if [ -z "$AWS_PROFILE" ]
-then
-    echo
-    print_error "(Error Message 002)  You did not include the proper use of the --profile=<SSO_PROFILE_NAME> argument in the call."
-    echo
-    print_error "Usage:  Require two argument ---> `basename $0` $argument_list"
-    echo
-    exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
-fi
-
 # Check required --mode argument was supplied
 if [ -z "$mode" ]
 then
     echo
-    print_error "(Error Message 003)  You did not include the proper use of the --mode=<MODE> argument in the call."
+    print_error "(Error Message 002)  You did not include the proper use of the --mode=<MODE> argument in the call."
     echo
-    print_error "Usage:  Require two argument ---> `basename $0` $argument_list"
+    print_error "Usage:  Require one argument ---> `basename $0` $argument_list"
     echo
     exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
 fi
 
+if [ -n "$AWS_PROFILE" ]
+then
+    # Get the AWS SSO credential variables that are used by the AWS CLI commands to authenticate
+    print_step "Authenticating to AWS SSO profile: $AWS_PROFILE..."
+    aws sso login $AWS_PROFILE
+    eval $(aws2-wrap $AWS_PROFILE --export)
+    export AWS_REGION=$(aws configure get region $AWS_PROFILE)
+fi
 
-# Get the AWS SSO credential variables that are used by the AWS CLI commands to authenicate
-print_step "Authenticating to AWS SSO profile: $AWS_PROFILE..."
-aws sso login $AWS_PROFILE
-eval $(aws2-wrap $AWS_PROFILE --export)
-export AWS_REGION=$(aws configure get region $AWS_PROFILE)
 
 # Build the argument list for the demo script
 cmd_args="--mode $mode --demo $demo"

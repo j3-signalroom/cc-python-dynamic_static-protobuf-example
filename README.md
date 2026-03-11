@@ -697,8 +697,8 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 ## **2.0 Running the demos**
 
 ```bash
-./run-demo.sh --profile=<SSO_PROFILE_NAME> \
-              --mode=<schema-only|full> \
+./run-demo.sh --mode=<schema-only|full> \
+              [--profile=<SSO_PROFILE_NAME>] \
               [--demo=<all|basic|delete|evolution|oneof|null|compat|types|strategies|csfle|no-auto-register>] \
               [--run-id=<any string, e.g. "test1">] \
               [--save-schemas=<directory>] \
@@ -707,14 +707,14 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 
 | Argument | Required | Choice | Default | Description |
 |----------|----------|-------------|---------|-------------|
-| `--profile` | ✅ | --- | --- | The AWS SSO profile name. Passed directly to `aws sso login` and `aws2-wrap` for authentication, and used to resolve `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`, which are then exported as `TF_VAR_aws_region`, `TF_VAR_aws_access_key_id`, `TF_VAR_aws_secret_access_key`, and `TF_VAR_aws_session_token` for Terraform, respectively. |
 | `--mode` | ✅ | `schema-only`, `full` | `schema-only` | SR-only or full Kafka round-trip |
+| `--profile` | ❌ | --- | --- | The AWS SSO profile name. Passed directly to `aws sso login` and `aws2-wrap` for authentication, and used to resolve `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`, which are then exported as `TF_VAR_aws_region`, `TF_VAR_aws_access_key_id`, `TF_VAR_aws_secret_access_key`, and `TF_VAR_aws_session_token` for Terraform, respectively. |
 | `--demo` | ❌ | `all` `basic` `delete` `evolution` `oneof` `null` `compat` `types` `strategies` `csfle` `no-auto-register` | `all` | Which demo to run |
 | `--run-id` | ❌ | any string | random 8-char UUID prefix | Appended to every topic and subject name to prevent collisions across runs |
 | `--save-schemas` | ❌ | directory path | disabled | Save generated `.proto` schema files to the given directory (created if needed) |
 | `--use-protoc` | ❌ | flag (no value) | disabled | Use protoc-compiled `_pb2.py` stubs instead of dynamic runtime descriptors. Requires `protoc` on `PATH` (`brew install protobuf`). |
 
-> All required flags must be provided; if a required flag is missing, the script exits with code `85`.
+> All required flag(s) must be provided; if a required flag is missing, the script exits with code `85`.
 
 In `--mode=full`, the app calls `ensure_topics()` via `AdminClient` to pre-create all five required topics before any produce calls.  Confluent Cloud mandates `replication_factor=3`; existing topics are silently skipped.  Schema registration and Kafka produce/consume are fully integrated in both modes, but only in `full` mode do the messages actually go to Kafka. In `schema-only` mode, the app still registers schemas and prints the resulting wire-format bytes to the console, but does not interact with Kafka at all.
 
