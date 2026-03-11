@@ -2,10 +2,13 @@
 
 #
 # *** Purpose ***
-# Run all demo scripts for the project using the specified AWS SSO profile.
+# Run a specific demo script for the project using the specified AWS SSO profile.
 #
 # *** Script Syntax ***
-# ./run-all-demos.sh --profile=<SSO_PROFILE_NAME>
+# ./run-demo.sh --profile=<SSO_PROFILE_NAME>
+#               --mode=<MODE>
+#               [--demo=<DEMO>]
+#               [--run-id=<RUN_ID>]
 #
 #
 
@@ -42,11 +45,14 @@ TERRAFORM_DIR="$SCRIPT_DIR/terraform"
 
 print_info "Terraform Directory: $TERRAFORM_DIR"
 
-argument_list="--profile=<SSO_PROFILE_NAME>"
+argument_list="--profile=<SSO_PROFILE_NAME> --mode=<MODE>"
 
 
 # Default required variables
 AWS_PROFILE=""
+mode=""
+demo="all"
+run_id=""
 
 
 # Get the arguments passed by shift to remove the first word
@@ -56,11 +62,20 @@ do
     case $arg in
         *"--profile="*)
             AWS_PROFILE=$arg;;
+        *"--mode="*)
+            arg_length=7
+            mode=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        *"--demo="*)
+            arg_length=7
+            demo=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        *"--run-id="*)
+            arg_length=9
+            run_id=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
         *)
             echo
             print_error "(Error Message 001)  You included an invalid argument: $arg"
             echo
-            print_error "Usage:  Require one argument ---> `basename $0` $argument_list"
+            print_error "Usage:  Require two argument ---> `basename $0` $argument_list"
             echo
             exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
             ;;
@@ -73,7 +88,18 @@ then
     echo
     print_error "(Error Message 002)  You did not include the proper use of the --profile=<SSO_PROFILE_NAME> argument in the call."
     echo
-    print_error "Usage:  Require one argument ---> `basename $0` $argument_list"
+    print_error "Usage:  Require two argument ---> `basename $0` $argument_list"
+    echo
+    exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+fi
+
+# Check required --mode argument was supplied
+if [ -z "$mode" ]
+then
+    echo
+    print_error "(Error Message 003)  You did not include the proper use of the --mode=<MODE> argument in the call."
+    echo
+    print_error "Usage:  Require two argument ---> `basename $0` $argument_list"
     echo
     exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
 fi
@@ -85,4 +111,10 @@ aws sso login $AWS_PROFILE
 eval $(aws2-wrap $AWS_PROFILE --export)
 export AWS_REGION=$(aws configure get region $AWS_PROFILE)
 
-uv run python src/main.py --mode full --demo all
+# Run the main.py script with the specified mode, demo, and/or run-id
+if [ -z "$run_id" ]
+then
+    uv run python src/main.py --mode $mode --demo $demo
+else
+    uv run python src/main.py --mode $mode --demo $demo --run-id $run_id
+fi
