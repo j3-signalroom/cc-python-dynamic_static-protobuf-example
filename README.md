@@ -676,8 +676,8 @@ visible), and deserialized with decryption (plaintext restored). Requires
 
 ## **3.0 Cleanup**
 
-All topics and subjects are suffixed with `{run_id}`. To remove everything a
-specific run created:
+Since all topics and subjects are suffixed with `<run_id>`, to remove everything a
+specific run created, follow these steps:
 
 ```bash
 # Soft-delete SR subjects
