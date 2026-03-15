@@ -1,7 +1,6 @@
 from __future__ import annotations
 from schema_registry_client import SchemaRegistryClient
 from proto_schema import ProtoSchema
-from field_encryption import FieldEncryptor, get_encrypted_fields
 from utilities import setup_logging
 
 
@@ -20,9 +19,6 @@ logger = setup_logging()
 # schema_id → ProtoSchema: lets the deserializer find the right class
 _schema_id_to_message: dict[int, "ProtoSchema"] = {}
 
-# schema_id → (metadata, rule_set, subject): CSFLE context for the deserializer
-_schema_id_to_csfle: dict[int, tuple[dict | None, dict | None, str]] = {}
-
 
 
 class KafkaProtobufSerializer:
@@ -40,13 +36,11 @@ class KafkaProtobufSerializer:
         subject_name_strategy: str = "TopicNameStrategy",
         auto_register: bool = True,
         reference_subject_name_strategy: str = "DefaultReferenceSubjectNameStrategy",
-        field_encryptor: FieldEncryptor | None = None,
     ) -> None:
         self.sr = sr
         self.subject_name_strategy = subject_name_strategy
         self.auto_register = auto_register
         self.ref_strategy = reference_subject_name_strategy
-        self.field_encryptor = field_encryptor
 
     def _subject(self, topic: str, message: ProtoSchema, is_key: bool) -> str:
         suffix = "key" if is_key else "value"
@@ -85,13 +79,6 @@ class KafkaProtobufSerializer:
             schema_id = vs["id"]
 
         _schema_id_to_message[schema_id] = message
-        _schema_id_to_csfle[schema_id] = (metadata, rule_set, subject)
-
-        # CSFLE: encrypt tagged fields before protobuf serialization
-        if self.field_encryptor and metadata and rule_set:
-            enc_fields = get_encrypted_fields(metadata, rule_set)
-            if enc_fields:
-                data = self.field_encryptor.encrypt_fields(data, enc_fields, subject)
 
         return self.sr.encode(schema_id, message.serialize(data))
 
@@ -104,7 +91,6 @@ class KafkaProtobufDeserializer:
     - specific_type set  → deserialize into that ProtoMessage (specific type)
     - specific_type None → return dict  (DynamicMessage equivalent)
     - derive_type=True   → mirrors derive.type=true Java config
-    - field_encryptor    → enables CSFLE auto-decryption of tagged fields
     """
 
     def __init__(
@@ -112,12 +98,10 @@ class KafkaProtobufDeserializer:
         sr: SchemaRegistryClient,
         specific_type: ProtoSchema | None = None,
         derive_type: bool = False,
-        field_encryptor: FieldEncryptor | None = None,
     ) -> None:
         self.sr = sr
         self.specific_type = specific_type
         self.derive_type = derive_type
-        self.field_encryptor = field_encryptor
 
     def deserialize(self, raw_message: bytes) -> dict:
         schema_id, payload = self.sr.decode_header(raw_message)
@@ -132,21 +116,5 @@ class KafkaProtobufDeserializer:
                 f"No message class registered for schema_id={schema_id}. "
                 "Pass specific_type= to KafkaProtobufDeserializer or serialize first."
             )
-
-        # CSFLE: decrypt tagged fields after protobuf deserialization
-        if self.field_encryptor:
-            metadata = schema_info.get("metadata")
-            rule_set = schema_info.get("ruleSet")
-            subject = None
-            # Fall back to in-process cache when SR response lacks metadata
-            if (not metadata or not rule_set) and schema_id in _schema_id_to_csfle:
-                metadata, rule_set, subject = _schema_id_to_csfle[schema_id]
-            if metadata and rule_set:
-                enc_fields = get_encrypted_fields(metadata, rule_set)
-                if enc_fields:
-                    if not subject:
-                        versions = self.sr.get_versions_for_schema(schema_id)
-                        subject = versions[0]["subject"] if versions else str(schema_id)
-                    data = self.field_encryptor.decrypt_fields(data, enc_fields, subject)
 
         return data

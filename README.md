@@ -29,10 +29,9 @@ Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the Ser
         + [1.8.4 `CompiledProtoMessage` / `compile_protos` / `load_compiled_message` (`compiled_protobuf_helpers.py`)](#184-compiledprotomessage--compile_protos--load_compiled_message-compiled_protobuf_helperspy)
         + [1.8.5 `KafkaProtobufSerializer` (`kafka_protobuf_serdes.py`)](#185-kafkaprotobufserializer-kafka_protobuf_serdespy)
         + [1.8.6 `KafkaProtobufDeserializer` (`kafka_protobuf_serdes.py`)](#186-kafkaprotobufdeserializer-kafka_protobuf_serdespy)
-        + [1.8.7 `FieldEncryptor` / `get_encrypted_fields()` (`field_encryption.py`)](#187-fieldencryptor--get_encrypted_fields-field_encryptionpy)
-        + [1.8.8 `kafka_helpers.py`](#188-kafka_helperspy)
-        + [1.8.9 `utilities.py`](#189-utilitiespy)
-        + [1.8.10 `demos.py`](#1810-demospy)
+        + [1.8.7 `kafka_helpers.py`](#187-kafka_helperspy)
+        + [1.8.8 `utilities.py`](#188-utilitiespy)
+        + [1.8.9 `demos.py`](#189-demospy)
     + [1.9 Logging](#19-logging)
     + [1.10 Wire format](#110-wire-format)
         - [1.10.1 Why a message index?](#1101-why-a-message-index)
@@ -75,7 +74,6 @@ cc-python-dynamic_static-protobuf-example/
 │   ├── compiled_protobuf_helpers.py # CompiledProtoMessage, compile_protos(), load_compiled_message() — protoc stubs
 │   ├── kafka_protobuf_serdes.py     # KafkaProtobufSerializer & KafkaProtobufDeserializer
 │   ├── kafka_helpers.py             # ensure_topics(), kafka_produce(), kafka_consume_one()
-│   ├── field_encryption.py          # FieldEncryptor & get_encrypted_fields() — AES-256-GCM CSFLE
 │   ├── demos.py                     # All ten demo functions (demo_basic … demo_no_auto_register)
 │   ├── main.py                      # Thin entry point — wires config, SR client, and demo dispatch
 │   ├── schemas                      # Proto3 schema definitions (used by --use-protoc)
@@ -205,9 +203,6 @@ flowchart TB
         subgraph SR_CSFLE["Catalog / DEK Registry (CSFLE)"]
             POST_TAG["POST /catalog/v1/types/tagdefs\ncreate_tag()  idempotent"]
             POST_KEK["POST /dek-registry/v1/keks\ncreate_kek()"]
-            GET_KEK["GET /dek-registry/v1/keks/{name}\nget_kek()"]
-            POST_DEK["POST /dek-registry/v1/keks/{name}/deks\ncreate_dek()"]
-            GET_DEK["GET /dek-registry/v1/keks/{name}/deks/{subject}\nget_dek()"]
         end
 
         subgraph SR_COMPAT["Compatibility"]
@@ -260,14 +255,6 @@ flowchart TB
         BASE --> CONS_H
     end
 
-    %% ── CSFLE ──────────────────────────────────────────────────────────
-    subgraph CSFLE_BOX["CSFLE  (field_encryption.py)"]
-        direction TB
-        FE["FieldEncryptor\nAES-256-GCM\nAWS KMS + DEK Registry"]
-        GEF["get_encrypted_fields()\nmetadata tags → field list"]
-        GEF --> FE
-    end
-
     %% ── Demos ───────────────────────────────────────────────────────────
     subgraph DEMOS["Demo Sections  (demos.py)"]
         direction LR
@@ -313,7 +300,6 @@ flowchart TB
     CLI --> SERDES
     CLI --> KAFKA_H
     CLI --> DEMOS
-    CLI --> CSFLE_BOX
 
     SCHEMA --> SERDES
     COMPILED --> SERDES
@@ -323,11 +309,7 @@ flowchart TB
     SERDES --> DEMOS
     KAFKA_H --> DEMOS
 
-    CSFLE_BOX --> SERDES
-    CSFLE_BOX --> DEMOS
-
     TF_OUT -->|"provisions"| AWS_KMS
-    CSFLE_BOX -->|"boto3"| AWS_KMS
 
     SRC  -->|"HTTPS REST"| CC_SR
     KAFKA_H -->|"SASL_SSL"| CC_KAFKA
@@ -347,8 +329,7 @@ flowchart TB
     class WIRE,ENC,DEC wire
     class Boot,UTIL,CONST boot
     classDef csfle    fill:#8b1a1a,color:#fff,stroke:#8b1a1a
-    class CSFLE_BOX,FE,GEF csfle
-    class SR_CSFLE,POST_TAG,POST_KEK,GET_KEK,POST_DEK,GET_DEK csfle
+    class SR_CSFLE,POST_TAG,POST_KEK csfle
     classDef tf        fill:#5c4ee5,color:#fff,stroke:#5c4ee5
     class TF,TF_MAIN,TF_PROV,TF_VARS,TF_OUT tf
     classDef aws       fill:#f09020,color:#fff,stroke:#f09020
@@ -413,7 +394,7 @@ into a local `.venv`. No manual `pip install` is needed.
 | `boto3` | 1.38.0 | AWS KMS client for CSFLE DEK unwrapping |
 | `cachetools` | 7.0.5 | In-process caching utilities |
 | `confluent-kafka[schemaregistry,protobuf]` | 2.13.2 | Producer, Consumer, AdminClient, Schema Registry, Protobuf SerDes (required for `--mode full` and `--demo csfle`) |
-| `cryptography` | 44.0.0 | AES-256-GCM encryption for Client-Side Field Level Encryption (CSFLE) |
+
 | `dotenv` | 0.9.9 | dotenv compatibility shim |
 | `googleapis-common-protos` | 1.56.1 | Common proto definitions (well-known types) |
 | `httpx` | 0.28.1 | Async HTTP client |
@@ -490,9 +471,6 @@ used by `decode_header()` to skip the message-index varint array.
 | `register(subject, schema, ...)` | `POST /subjects/{s}/versions` |
 | `create_tag(tag_name)` | `POST /catalog/v1/types/tagdefs` *(idempotent)* |
 | `create_kek(name, kms_type, kms_key_id, shared?)` | `POST /dek-registry/v1/keks` |
-| `get_kek(name)` | `GET /dek-registry/v1/keks/{name}` |
-| `create_dek(kek, subj, algo?, encrypted_key_material?)` | `POST /dek-registry/v1/keks/{name}/deks` |
-| `get_dek(kek, subject)` | `GET /dek-registry/v1/keks/{name}/deks/{subject}` |
 | `delete_version(subject, version)` | `DELETE /subjects/{s}/versions/{v}` |
 | `delete_subject(subject)` | `DELETE /subjects/{s}` *(soft)* |
 | `delete_subject_permanent(subject)` | `DELETE /subjects/{s}?permanent=true` |
@@ -583,9 +561,7 @@ topic, message name, and `is_key` flag using the configured
 `subject_name_strategy`, then either auto-registers the schema or looks it up,
 and finally calls `sr.encode()` to wrap the payload in the Confluent wire
 format. Maintains a module-level `_schema_id_to_message` registry so the
-deserializer can resolve message classes by schema ID. When a `field_encryptor`
-is provided along with `metadata` and `rule_set`, tagged fields are encrypted
-via `FieldEncryptor.encrypt_fields()` before Protobuf serialization.
+deserializer can resolve message classes by schema ID.
 
 #### **1.8.6 `KafkaProtobufDeserializer` (`kafka_protobuf_serdes.py`)**
 
@@ -593,42 +569,9 @@ Mirrors the Java `KafkaProtobufDeserializer`. Strips the wire-format header
 via `sr.decode_header()`, warms the schema cache via `get_schema_by_id()`,
 then either delegates to `specific_type.deserialize()` or looks up the
 message class from the module-level `_schema_id_to_message` registry
-populated by the serializer (DynamicMessage equivalent). When a
-`field_encryptor` is provided, tagged fields are automatically decrypted
-after deserialization using metadata from either the SR response or an
-in-process `_schema_id_to_csfle` cache.
+populated by the serializer (DynamicMessage equivalent).
 
-#### **1.8.7 `FieldEncryptor` / `get_encrypted_fields()` (`field_encryption.py`)**
-
-Implements AES-256-GCM field-level encryption for Confluent CSFLE via AWS KMS.
-
-**`get_encrypted_fields(metadata, rule_set)`** — Inspects schema metadata
-property tags (e.g. `SensitiveRecord.ssn.tags = "PII"`) and rule set domain
-rules of type `ENCRYPT` to return the list of field names targeted for
-encryption.
-
-**`FieldEncryptor`** — Manages Data Encryption Keys (DEKs) per subject and
-encrypts/decrypts individual string field values. Uses the Confluent DEK
-Registry for DEK storage and AWS KMS for KEK management:
-
-1. **First encrypt** — generates a 256-bit DEK locally, encrypts it via `kms.encrypt()`, then registers the encrypted key material with `create_dek()`
-2. **Subsequent calls** — `get_dek()` returns the encrypted DEK from the registry, decrypted via `boto3 kms.decrypt()`
-3. **DEKs are cached** in-process per subject to avoid repeated KMS calls
-
-Encrypted values use the envelope format:
-`magic(0xC0) + version(0x01) + nonce(12 bytes) + ciphertext+tag(N bytes)`,
-base64-encoded before storage in the Protobuf string field.
-
-| Method | Purpose |
-|---|---|
-| `encrypt_value(value, subject)` | Encrypt a single string → base64 ciphertext |
-| `decrypt_value(encrypted, subject)` | Decrypt a base64 ciphertext → original string |
-| `encrypt_fields(data, fields, subject)` | Batch-encrypt named fields in a data dict |
-| `decrypt_fields(data, fields, subject)` | Batch-decrypt named fields in a data dict |
-| `_encrypt_dek_via_kms(plaintext_key)` | Encrypt a DEK via AWS KMS `kms.encrypt()` |
-| `_decrypt_dek_via_kms(encrypted_key)` | Decrypt a DEK via AWS KMS `kms.decrypt()` |
-
-#### **1.8.8 `kafka_helpers.py`**
+#### **1.8.7 `kafka_helpers.py`**
 
 Contains all Kafka broker interaction logic, isolated from the demo and
 Schema Registry code. Only used when running with `--mode full`.
@@ -640,7 +583,7 @@ Schema Registry code. Only used when running with `--mode full`.
 | `kafka_produce(cfg, topic, key, value)` | `Producer` → `produce()` + `flush()` |
 | `kafka_consume_one(cfg, topic, group_id)` | `Consumer` → `subscribe()` → `poll()` loop + `commit()` |
 
-#### **1.8.9 `utilities.py`**
+#### **1.8.8 `utilities.py`**
 
 | Function | Purpose |
 |---|---|
@@ -648,7 +591,7 @@ Schema Registry code. Only used when running with `--mode full`.
 | `get_config()` | Reads the seven environment variables (`BOOTSTRAP_SERVERS`, `KAFKA_API_KEY`, …, `AWS_KMS_KEY_ARN`) and returns `(cfg_dict, missing_keys)`. |
 | `parse_args()` | Defines the `--mode`, `--demo`, `--run-id`, `--save-schemas`, and `--use-protoc` CLI flags via `argparse` and returns the parsed `Namespace`. |
 
-#### **1.8.10 `demos.py`**
+#### **1.8.9 `demos.py`**
 
 Contains all ten demo functions extracted from the former monolithic `main.py`.
 Each function receives a `SchemaRegistryClient`, an optional Kafka config dict
@@ -851,9 +794,8 @@ subject name strategies.
 
 Demonstrates Confluent-native CSFLE using the **`confluent-kafka`** library's
 `ProtobufSerializer` / `ProtobufDeserializer` with the `FieldEncryptionExecutor`
-rule engine and `AwsKmsDriver`. This is the fully integrated Confluent approach —
-encryption/decryption is handled transparently by the serializer/deserializer
-rather than by the custom `FieldEncryptor` used in other demos.
+rule engine and `AwsKmsDriver`. Encryption/decryption is handled transparently
+by the Confluent serializer/deserializer.
 
 The demo proceeds in eleven steps:
 

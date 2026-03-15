@@ -227,42 +227,6 @@ class SchemaRegistryClient:
         logger.info(f"  [DEK] Created KEK '{name}' (kmsType={kms_type})")
         return result
 
-    def get_kek(self, name: str) -> dict:
-        """GET /dek-registry/v1/keks/{name}"""
-        return self._get(f"/dek-registry/v1/keks/{name}")
-
-    def create_dek(
-        self,
-        kek_name: str,
-        subject: str,
-        algorithm: str = "AES256_GCM",
-        encrypted_key_material: str | None = None,
-    ) -> dict:
-        """POST /dek-registry/v1/keks/{name}/deks — create a Data Encryption Key.
-
-        Parameters
-        ----------
-        encrypted_key_material : str, optional
-            Base64-encoded ciphertext of the DEK, encrypted by the KEK via KMS.
-        """
-        body: dict[str, Any] = {"subject": subject, "algorithm": algorithm}
-        if encrypted_key_material:
-            body["encryptedKeyMaterial"] = encrypted_key_material
-        result = self._post(f"/dek-registry/v1/keks/{kek_name}/deks", body)
-        logger.info(f"  [DEK] Created DEK for subject='{subject}' under KEK '{kek_name}'")
-        return result
-
-    def get_dek(
-        self,
-        kek_name: str,
-        subject: str,
-        algorithm: str = "AES256_GCM",
-    ) -> dict:
-        """GET /dek-registry/v1/keks/{name}/deks/{subject}"""
-        return self._get(
-            f"/dek-registry/v1/keks/{kek_name}/deks/{subject}?algorithm={algorithm}"
-        )
-
     # ── Wire format ───────────────────────────────────────────────────────
 
     def encode(self, schema_id: int, payload: bytes) -> bytes:
