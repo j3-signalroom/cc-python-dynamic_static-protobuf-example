@@ -4,7 +4,7 @@ A hands-on Python demonstration of the **Confluent Cloud Protobuf Schema Seriali
 The project talks to a Confluent Cloud Schema Registry over the SR REST API and, when run in `full` mode, produces and consumes messages on a Kafka cluster via `confluent-kafka`. It supports two Protobuf modes:
 
 - **Dynamic (default)** — schemas are defined as Python dataclasses, compiled at runtime into `google.protobuf` `FileDescriptorProto` objects, and serialized to **Protobuf binary** using `google.protobuf.message_factory`. No `protoc` compiler or generated stubs are required.
-- **Precompiled (`--use-protoc`)** — schemas are pre-compiled from `.proto` files in the `schemas/` directory into `_pb2.py` stubs via `protoc`, then wrapped by `CompiledProtoMessage` for better performance and compile-time type safety.
+- **Precompiled (`--use-protoc`)** — schemas are pre-compiled from `.proto` files in the `src/schemas/` directory into `_pb2.py` stubs via `protoc`, then wrapped by `CompiledProtoMessage` for better performance and compile-time type safety.
 
 Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the SerDes layer.
 
@@ -39,11 +39,11 @@ Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the Ser
 + [2.0 Running the demos](#20-running-the-demos)
     + [2.1 Demos](#21-demos)
         + [2.1.1 Demo 1 — Basic Serializer & Deserializer (`--demo basic`)](#211-demo-1--basic-serializer--deserializer---demo-basic)
-        + [2.1.2 Demo 2 — Reference-Deletion Protection (`--demo delete-protection`)](#212-demo-2--reference-deletion-protection---demo-delete)
+        + [2.1.2 Demo 2 — Reference-Deletion Protection (`--demo delete`)](#212-demo-2--reference-deletion-protection---demo-delete)
         + [2.1.3 Demo 3 — Schema Evolution (`--demo evolution`)](#213-demo-3--schema-evolution---demo-evolution)
         + [2.1.4 Demo 4 — Multiple Event Types / `oneOf` (`--demo oneof`)](#214-demo-4--multiple-event-types--oneof---demo-oneof)
-        + [2.1.5 Demo 5 — Null-Value Handling (`--demo null-handling`)](#215-demo-5--null-value-handling---demo-null)
-        + [2.1.6 Demo 6 — Compatibility Rules (`--demo compatibility`)](#216-demo-6--compatibility-rules---demo-compat)
+        + [2.1.5 Demo 5 — Null-Value Handling (`--demo null`)](#215-demo-5--null-value-handling---demo-null)
+        + [2.1.6 Demo 6 — Compatibility Rules (`--demo compat`)](#216-demo-6--compatibility-rules---demo-compat)
         + [2.1.7 Demo 7 — Schema Types (`--demo types`)](#217-demo-7--schema-types--return-types---demo-types)
         + [2.1.8 Demo 8 — Subject Name Strategies (`--demo strategies`)](#218-demo-8--subject-name-strategies---demo-strategies)
         + [2.1.9 Demo 9 — Client-Side Field Level Encryption (`--demo csfle`)](#219-demo-9--client-side-field-level-encryption---demo-csfle)
@@ -540,7 +540,7 @@ type safety.
 
 | Method | Purpose |
 |---|---|
-| `to_schema_string()` | Returns the original `.proto` schema text (read from `schemas/`) |
+| `to_schema_string()` | Returns the original `.proto` schema text (read from `src/schemas/`) |
 | `serialize(data)` | `ParseDict` → `SerializeToString()` using the compiled message class |
 | `deserialize(raw)` | `ParseFromString` → `MessageToDict` using the compiled message class |
 | `save_schema(directory)` | Writes the `.proto` schema text to `directory/{file_name}` |
@@ -685,18 +685,30 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 
 ```bash
 ./run-demo.sh --mode=<schema-only|full> \
+              --demo=<all|basic|delete|evolution|oneof|null|compat|types|strategies|csfle|no-auto-register> \
+              --schema-registry-url=<SCHEMA_REGISTRY_URL> \
+              --sr-api-key=<SR_API_KEY> \
+              --sr-api-secret=<SR_API_SECRET> \
+              [--bootstrap-servers=<BOOTSTRAP_SERVERS>] \
+              [--kafka-api-key=<KAFKA_API_KEY>] \
+              [--kafka-api-secret=<KAFKA_API_SECRET>] \
               [--profile=<SSO_PROFILE_NAME>] \
-              [--demo=<all|basic|delete|evolution|oneof|null|compat|types|strategies|csfle|no-auto-register>] \
               [--run-id=<any string, e.g. "test1">] \
               [--save-schemas=<directory>] \
               [--use-protoc]
 ```
 
-| Argument | Required | Choice | Default | Description |
+| Argument | Required | Choice / Value | Default | Description |
 |----------|----------|-------------|---------|-------------|
-| `--mode` | ✅ | `schema-only`, `full` | `schema-only` | SR-only or full Kafka round-trip |
-| `--profile` | ❌ | --- | --- | The AWS SSO profile name. Passed directly to `aws sso login` and `aws2-wrap` for authentication, and used to resolve `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` for AWS CLI calls. |
-| `--demo` | ❌ | `all` `basic` `delete` `evolution` `oneof` `null` `compat` `types` `strategies` `csfle` `no-auto-register` | `all` | Which demo to run |
+| `--mode` | ✅ | `schema-only`, `full` | — | SR-only or full Kafka round-trip |
+| `--demo` | ✅ | `all` `basic` `delete` `evolution` `oneof` `null` `compat` `types` `strategies` `csfle` `no-auto-register` | — | Which demo to run |
+| `--schema-registry-url` | ✅ | URL | — | Confluent Cloud Schema Registry endpoint |
+| `--sr-api-key` | ✅ | string | — | Schema Registry API key |
+| `--sr-api-secret` | ✅ | string | — | Schema Registry API secret |
+| `--bootstrap-servers` | ❌ | host:port | — | Kafka bootstrap servers (required for `--mode full`) |
+| `--kafka-api-key` | ❌ | string | — | Kafka API key (required for `--mode full`) |
+| `--kafka-api-secret` | ❌ | string | — | Kafka API secret (required for `--mode full`) |
+| `--profile` | ❌ | string | — | The AWS SSO profile name. Passed directly to `aws sso login` and `aws2-wrap` for authentication, and used to resolve `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` for AWS CLI calls. Required for `--demo csfle`. |
 | `--run-id` | ❌ | any string | random 8-char UUID prefix | Appended to every topic and subject name to prevent collisions across runs |
 | `--save-schemas` | ❌ | directory path | disabled | Save generated `.proto` schema files to the given directory (created if needed) |
 | `--use-protoc` | ❌ | flag (no value) | disabled | Use protoc-compiled `_pb2.py` stubs instead of dynamic runtime descriptors. Requires `protoc` on `PATH` (`brew install protobuf`). |
@@ -926,7 +938,7 @@ done
   `CompiledProtoMessage` (precompiled) produce real Protobuf binary on the wire.
   The dynamic path uses `google.protobuf.message_factory` with runtime-constructed
   `FileDescriptorProto` objects — no `protoc` required. The precompiled path
-  (`--use-protoc`) compiles `.proto` files from `schemas/` into `_pb2.py` stubs
+  (`--use-protoc`) compiles `.proto` files from `src/schemas/` into `_pb2.py` stubs
   via `protoc` for better performance and compile-time type safety. Both satisfy
   the `ProtoSchema` protocol and are interchangeable in the SerDes layer.
   `json_format.ParseDict` / `MessageToDict` bridge between plain Python dicts
@@ -938,3 +950,4 @@ done
 - [Confluent Kafka Python Protobuf Producer Encryption Example](https://github.com/confluentinc/confluent-kafka-python/blob/master/examples/protobuf_producer_encryption.py)
 - [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
 - [AWS CLI KMS Reference](https://docs.aws.amazon.com/cli/latest/reference/kms/)
+- [Google Tink documentation](https://developers.google.com/tink)

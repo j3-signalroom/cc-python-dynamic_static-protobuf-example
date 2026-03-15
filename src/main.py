@@ -72,7 +72,7 @@ def main() -> None:
     if use_protoc:
         from compiled_protobuf_helpers import compile_protos
         logger.info("\n[protoc] Compiling .proto schemas …")
-        compile_protos("schemas")
+        compile_protos()
 
     logger.info("=" * 100)
     logger.info("  Confluent Cloud Python Protobuf CSFLE (Client-Side Field-Level Encryption) Example Demo(s)")

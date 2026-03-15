@@ -6,8 +6,14 @@
 #
 # *** Script Syntax ***
 # ./run-demo.sh --mode=<MODE>
+#               --demo=<DEMO>
+#               --schema-registry-url=<SCHEMA_REGISTRY_URL>
+#               --sr-api-key=<SR_API_KEY>
+#               --sr-api-secret=<SR_API_SECRET>
+#               [--bootstrap-servers=<BOOTSTRAP_SERVERS>]
+#               [--kafka-api-key=<KAFKA_API_KEY>]
+#               [--kafka-api-secret=<KAFKA_API_SECRET>]
 #               [--profile=<SSO_PROFILE_NAME>]
-#               [--demo=<DEMO>]
 #               [--run-id=<RUN_ID>]
 #               [--save-schemas=<SAVE_DIR>]
 #               [--use-protoc]
@@ -44,17 +50,22 @@ print_step() {
 # Configuration folders
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-argument_list="--mode=<MODE>"
+argument_list="--mode=<MODE> --demo=<DEMO> --schema-registry-url=<SCHEMA_REGISTRY_URL> --sr-api-key=<SR_API_KEY> --sr-api-secret=<SR_API_SECRET>"
 
 
 # Default required variables
 AWS_PROFILE=""
 mode=""
-demo="all"
+demo=""
 run_id=""
 save_schemas_dir=""
 use_protoc=""
-
+bootstrap_servers=""
+kafka_api_key=""
+kafka_api_secret=""
+schema_registry_url=""
+sr_api_key=""
+sr_api_secret=""
 
 # Get the arguments passed by shift to remove the first word
 # then iterate over the rest of the arguments
@@ -77,11 +88,29 @@ do
             save_schemas_dir=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
         "--use-protoc")
             use_protoc="--use-protoc";;
+        "--bootstrap-servers="*)
+            arg_length=20
+            bootstrap_servers=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        "--kafka-api-key="*)
+            arg_length=16
+            kafka_api_key=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        "--kafka-api-secret="*)
+            arg_length=19
+            kafka_api_secret=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        "--schema-registry-url="*)
+            arg_length=22
+            schema_registry_url=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        "--sr-api-key="*)
+            arg_length=13
+            sr_api_key=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
+        "--sr-api-secret="*)
+            arg_length=16
+            sr_api_secret=${arg:$arg_length:$(expr ${#arg} - $arg_length)};;
         *)
             echo
             print_error "(Error Message 001)  You included an invalid argument: $arg"
             echo
-            print_error "Usage:  Require one argument ---> `basename $0` $argument_list"
+            print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
             echo
             exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
             ;;
@@ -94,9 +123,66 @@ then
     echo
     print_error "(Error Message 002)  You did not include the proper use of the --mode=<MODE> argument in the call."
     echo
-    print_error "Usage:  Require one argument ---> `basename $0` $argument_list"
+    print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
     echo
     exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+fi
+
+# Check required --demo argument was supplied
+if [ -z "$demo" ]
+then
+    echo
+    print_error "(Error Message 006)  You did not include the proper use of the --demo=<DEMO> argument in the call."
+    echo
+    print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
+    echo
+    exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+fi
+
+# Check required --schema-registry-url argument was supplied
+if [ -z "$schema_registry_url" ]
+then
+    echo
+    print_error "(Error Message 003)  You did not include the proper use of the --schema-registry-url=<SCHEMA_REGISTRY_URL> argument in the call."
+    echo
+    print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
+    echo
+    exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+fi
+
+# Check required --sr-api-key argument was supplied
+if [ -z "$sr_api_key" ]
+then
+    echo
+    print_error "(Error Message 004)  You did not include the proper use of the --sr-api-key=<SR_API_KEY> argument in the call."
+    echo
+    print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
+    echo
+    exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+fi
+
+# Check required --sr-api-secret argument was supplied
+if [ -z "$sr_api_secret" ]
+then            
+    echo
+    print_error "(Error Message 005)  You did not include the proper use of the --sr-api-secret=<SR_API_SECRET> argument in the call."
+    echo
+    print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
+    echo
+    exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+fi
+
+# Check required AWS_PROFILE environment variable was supplied
+if [ "$demo" = "csfle" ] || [ "$demo" = "all" ]; then
+    if [ -z "$AWS_PROFILE" ]
+    then            
+        echo
+        print_error "(Error Message 007)  You did not include the proper use of the AWS_PROFILE environment variable in the call."
+        echo
+        print_error "Usage:  Require five argument ---> `basename $0` $argument_list"
+        echo
+        exit 85 # Common GNU/Linux Exit Code for 'Interrupted system call should be restarted'
+    fi
 fi
 
 if [ -n "$AWS_PROFILE" ]
@@ -186,6 +272,14 @@ POLICY
     print_info "AWS_KMS_KEY_ARN=${AWS_KMS_KEY_ARN}"
     print_info "KMS KEK provisioned successfully!"
 fi
+
+# Create a .env file with the necessary environment variables for the demo script
+printf "BOOTSTRAP_SERVERS=\"${bootstrap_servers}\"\
+\nKAFKA_API_KEY=\"${kafka_api_key}\"\
+\nKAFKA_API_SECRET=\"${kafka_api_secret}\"\
+\nSCHEMA_REGISTRY_URL=\"${schema_registry_url}\"\
+\nSR_API_KEY=\"${sr_api_key}\"\
+\nSR_API_SECRET=\"${sr_api_secret}\"" > .env
 
 # Build the argument list for the demo script
 cmd_args="--mode $mode --demo $demo"

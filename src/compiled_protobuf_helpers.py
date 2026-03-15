@@ -58,7 +58,7 @@ def _patch_pool_duplicate(pb2_path: Path, proto_file_name: str) -> None:
     pb2_path.write_text("".join(result))
 
 
-def compile_protos(proto_dir: str = "schemas", output_dir: str = GENERATED_DIR) -> None:
+def compile_protos(proto_dir: str = "src/schemas", output_dir: str = GENERATED_DIR) -> None:
     """Compile all .proto files under *proto_dir* into Python _pb2.py stubs.
 
     Requires the ``protoc`` binary on the PATH.  Install it via your package
@@ -107,7 +107,7 @@ def compile_protos(proto_dir: str = "schemas", output_dir: str = GENERATED_DIR) 
 def load_compiled_message(
     proto_file: str,
     message_name: str,
-    proto_dir: str = "schemas",
+    proto_dir: str = "src/schemas",
     generated_dir: str = GENERATED_DIR,
 ) -> CompiledProtoMessage:
     """Load a protoc-generated _pb2 module and return a CompiledProtoMessage wrapper.
