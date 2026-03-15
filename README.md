@@ -48,10 +48,9 @@ Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the Ser
         + [2.1.8 Demo 8 — Subject Name Strategies (`--demo strategies`)](#218-demo-8--subject-name-strategies---demo-strategies)
         + [2.1.9 Demo 9 — Client-Side Field Level Encryption (`--demo csfle`)](#219-demo-9--client-side-field-level-encryption---demo-csfle)
         + [2.1.10 Demo 10 — Manual Schema Registration (`--demo no-auto-register`)](#2110-demo-10--manual-schema-registration---demo-no-auto-register)
-+ [3.0 Terraform — AWS KMS Provisioning](#30-terraform--aws-kms-provisioning)
++ [3.0 AWS KMS Provisioning](#30-aws-kms-provisioning)
     + [3.1 What it provisions](#31-what-it-provisions)
-    + [3.2 Terraform files](#32-terraform-files)
-    + [3.3 How it is used](#33-how-it-is-used)
+    + [3.2 How it is used](#32-how-it-is-used)
 + [4.0 Cleanup](#40-cleanup)
 + [5.0 Notes](#50-notes)
 + [6.0 Resources](#60-resources)
@@ -91,15 +90,9 @@ cc-python-dynamic_precompiled-protobuf-example/
 │   │       ├── MyRecord_v1.proto    # Schema evolution v1 (id, amount)
 │   │       └── MyRecord_v2.proto    # Schema evolution v2 (+ customer_id)
 │   └── generated_pb2/               # Auto-generated protoc stubs (gitignored, created by --use-protoc)
-├── terraform                        # Infrastructure as Code — AWS KMS key provisioning for CSFLE
-│   ├── main.tf                      # KMS key + alias resources with IAM policy for CSFLE operations
-│   ├── providers.tf                 # AWS provider configuration (region, credentials)
-│   ├── variables.tf                 # AWS region, credentials, KMS key settings (alias, description, deletion window)
-│   ├── outputs.tf                   # Exports kms_key_arn, kms_key_id, kms_key_alias
-│   └── data.tf                      # aws_caller_identity data source
 ├── docs
-│   └── images                       # Generated diagrams (e.g. Terraform visualization)
-├── run-demo.sh                      # Shell script — authenticates via AWS SSO, provisions KMS via Terraform, and runs demos
+│   └── images                       # Generated diagrams
+├── run-demo.sh                      # Shell script — authenticates via AWS SSO, provisions KMS via AWS CLI, and runs demos
 ├── pyproject.toml                   # Project metadata, dependencies, logging
 ├── uv.lock                          # Pinned dependency lockfile — commit this
 ├── .env                             # Credentials — NOT COMMITTED, loaded automatically by python-dotenv at startup
@@ -270,16 +263,18 @@ flowchart TB
         D10["Demo 10 · Manual Registration\nauto_register=False\ninvoices-{run_id}"]
     end
 
-    %% ── Terraform ──────────────────────────────────────────────────────
-    subgraph TF["Terraform  (terraform/)"]
+    %% ── AWS CLI (run-demo.sh) ─────────────────────────────────────────
+    subgraph AWSCLI["AWS CLI  (run-demo.sh)"]
         direction TB
-        TF_MAIN["main.tf\naws_kms_key · aws_kms_alias\nIAM policy for CSFLE"]
-        TF_PROV["providers.tf\nAWS provider v6.36.0"]
-        TF_VARS["variables.tf\naws_region · credentials\nkms_key_alias · deletion_window"]
-        TF_OUT["outputs.tf\nkms_key_arn · kms_key_id\nkms_key_alias"]
-        TF_PROV --> TF_MAIN
-        TF_VARS --> TF_MAIN
-        TF_MAIN --> TF_OUT
+        CLI_ID["aws sts get-caller-identity\naccount ID · caller ARN"]
+        CLI_KEY["aws kms create-key\ndescription · policy · tags"]
+        CLI_ROT["aws kms enable-key-rotation"]
+        CLI_ALIAS["aws kms create-alias\nalias/confluent-csfle-kek"]
+        CLI_DESC["aws kms describe-key\n→ kms_key_arn"]
+        CLI_ID --> CLI_KEY
+        CLI_KEY --> CLI_ROT
+        CLI_ROT --> CLI_ALIAS
+        CLI_ALIAS --> CLI_DESC
     end
 
     %% ── Confluent Cloud ─────────────────────────────────────────────────
@@ -309,7 +304,7 @@ flowchart TB
     SERDES --> DEMOS
     KAFKA_H --> DEMOS
 
-    TF_OUT -->|"provisions"| AWS_KMS
+    CLI_DESC -->|"provisions"| AWS_KMS
 
     SRC  -->|"HTTPS REST"| CC_SR
     KAFKA_H -->|"SASL_SSL"| CC_KAFKA
@@ -330,8 +325,8 @@ flowchart TB
     class Boot,UTIL,CONST boot
     classDef csfle    fill:#8b1a1a,color:#fff,stroke:#8b1a1a
     class SR_CSFLE,POST_TAG,POST_KEK csfle
-    classDef tf        fill:#5c4ee5,color:#fff,stroke:#5c4ee5
-    class TF,TF_MAIN,TF_PROV,TF_VARS,TF_OUT tf
+    classDef awscli    fill:#5c4ee5,color:#fff,stroke:#5c4ee5
+    class AWSCLI,CLI_ID,CLI_KEY,CLI_ROT,CLI_ALIAS,CLI_DESC awscli
     classDef aws       fill:#f09020,color:#fff,stroke:#f09020
     class AWS,AWS_KMS aws
     classDef iface     fill:#4a4a4a,color:#fff,stroke:#4a4a4a
@@ -700,7 +695,7 @@ This envelope is what makes Schema Registry-aware consumers (in any language) ab
 | Argument | Required | Choice | Default | Description |
 |----------|----------|-------------|---------|-------------|
 | `--mode` | ✅ | `schema-only`, `full` | `schema-only` | SR-only or full Kafka round-trip |
-| `--profile` | ❌ | --- | --- | The AWS SSO profile name. Passed directly to `aws sso login` and `aws2-wrap` for authentication, and used to resolve `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`, which are then exported as `TF_VAR_aws_region`, `TF_VAR_aws_access_key_id`, `TF_VAR_aws_secret_access_key`, and `TF_VAR_aws_session_token` for Terraform, respectively. |
+| `--profile` | ❌ | --- | --- | The AWS SSO profile name. Passed directly to `aws sso login` and `aws2-wrap` for authentication, and used to resolve `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` for AWS CLI calls. |
 | `--demo` | ❌ | `all` `basic` `delete` `evolution` `oneof` `null` `compat` `types` `strategies` `csfle` `no-auto-register` | `all` | Which demo to run |
 | `--run-id` | ❌ | any string | random 8-char UUID prefix | Appended to every topic and subject name to prevent collisions across runs |
 | `--save-schemas` | ❌ | directory path | disabled | Save generated `.proto` schema files to the given directory (created if needed) |
@@ -840,47 +835,59 @@ schema governance).
 
 ---
 
-## **3.0 Terraform — AWS KMS Provisioning**
+## **3.0 AWS KMS Provisioning**
 
-The `terraform/` directory contains Infrastructure as Code that provisions the AWS KMS key used as the Key Encryption Key (KEK) for the CSFLE demo. The configuration uses **Terraform Cloud** (organization: `signalroom`, workspace: `cc-python-dynamic-precompiled-protobuf-example`) for remote state management.
+The `run-demo.sh` script provisions the AWS KMS key used as the Key Encryption Key (KEK) for the CSFLE demo using **AWS CLI** commands directly — no Terraform required.
 
 ### **3.1 What it provisions**
 
 | Resource | Purpose |
 |---|---|
-| `aws_kms_key.csfle_kek` | Symmetric KMS key for encrypting/decrypting Data Encryption Keys (DEKs). Key rotation enabled. IAM policy grants the calling identity `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey`. |
-| `aws_kms_alias.csfle_kek` | Alias `alias/confluent-csfle-kek` for the KMS key |
+| KMS symmetric key | Symmetric KMS key for encrypting/decrypting Data Encryption Keys (DEKs). Key rotation enabled. IAM policy grants the root account full access and the calling identity `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey`. Tagged with `Purpose=confluent-csfle-kek`. |
+| KMS alias | Alias `alias/confluent-csfle-kek` for the KMS key |
 
-### **3.2 Terraform files**
-
-| File | Purpose |
-|---|---|
-| `main.tf` | Terraform Cloud backend config, required providers (AWS `6.36.0`), `aws_kms_key` and `aws_kms_alias` resources |
-| `providers.tf` | AWS provider configuration (region, access key, secret key, session token) |
-| `variables.tf` | Input variables: `aws_region`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `kms_key_alias`, `kms_key_description`, `kms_key_deletion_window` |
-| `outputs.tf` | Exports `kms_key_arn`, `kms_key_id`, and `kms_key_alias` |
-| `data.tf` | `aws_caller_identity` data source for dynamic IAM policy principal |
-
-### **3.3 How it is used**
+### **3.2 How it is used**
 
 When `run-demo.sh` is invoked with `--demo=csfle` or `--demo=all`, the script automatically:
 
-1. Authenticates to AWS SSO (if `--profile` is provided)
-2. Exports AWS credentials as `TF_VAR_*` environment variables
-3. Runs `terraform init` and `terraform apply -auto-approve` in `terraform/`
-4. Captures the KMS key ARN from `terraform output -raw kms_key_arn` and exports it as `AWS_KMS_KEY_ARN`
-5. Generates a Terraform graph visualization at `docs/images/terraform-visualization.png`
+1. Deletes any existing `alias/confluent-csfle-kek` alias from a previous run
+2. Authenticates to AWS SSO (if `--profile` is provided)
+3. Retrieves the AWS account ID and caller ARN via `aws sts get-caller-identity`
+4. Creates a KMS key with an IAM policy, description, and tags via `aws kms create-key`
+5. Enables automatic key rotation via `aws kms enable-key-rotation`
+6. Creates the alias `alias/confluent-csfle-kek` via `aws kms create-alias`
+7. Retrieves and exports the KMS key ARN as `AWS_KMS_KEY_ARN` via `aws kms describe-key`
 
 You can also provision the KMS key manually:
 
 ```bash
-cd terraform
-export TF_VAR_aws_region="us-east-1"
-export TF_VAR_aws_access_key_id="$AWS_ACCESS_KEY_ID"
-export TF_VAR_aws_secret_access_key="$AWS_SECRET_ACCESS_KEY"
-export TF_VAR_aws_session_token="$AWS_SESSION_TOKEN"   # if using SSO
-terraform init
-terraform apply
+# Get caller identity
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+AWS_CALLER_ARN=$(aws sts get-caller-identity --query "Arn" --output text)
+
+# Create the KMS key
+KMS_KEY_ID=$(aws kms create-key \
+    --description "KEK (Key Encryption Key) for Confluent CSFLE demo" \
+    --tags TagKey=Purpose,TagValue=confluent-csfle-kek \
+    --region us-east-1 \
+    --query "KeyMetadata.KeyId" \
+    --output text)
+
+# Enable key rotation
+aws kms enable-key-rotation --key-id "$KMS_KEY_ID" --region us-east-1
+
+# Create alias
+aws kms create-alias \
+    --alias-name alias/confluent-csfle-kek \
+    --target-key-id "$KMS_KEY_ID" \
+    --region us-east-1
+
+# Get the key ARN
+export AWS_KMS_KEY_ARN=$(aws kms describe-key \
+    --key-id "$KMS_KEY_ID" \
+    --region us-east-1 \
+    --query "KeyMetadata.Arn" \
+    --output text)
 ```
 
 ---
@@ -924,14 +931,10 @@ done
   the `ProtoSchema` protocol and are interchangeable in the SerDes layer.
   `json_format.ParseDict` / `MessageToDict` bridge between plain Python dicts
   and `google.protobuf.Message` instances in both modes.
-- **Terraform Cloud remote state.** The `terraform/` configuration uses
-  Terraform Cloud (organization `signalroom`) for state storage. If you want
-  to use local state instead, remove the `cloud {}` block from `main.tf`.
-
 ## **6.0 Resources**
 - [Confluent Protobuf SerDes documentation](https://docs.confluent.io/cloud/current/sr/fundamentals/serdes-develop/serdes-protobuf.html)
 - [Protocol Buffers (or Protobuf for short) documentation](https://developers.google.com/protocol-buffers/docs/overview)
 - [Protect Sensitive Data Using Client-Side Field Level Encryption on Confluent Cloud](https://docs.confluent.io/cloud/current/security/encrypt/csfle/overview.html#protect-sensitive-data-using-client-side-field-level-encryption-on-ccloud)
 - [Confluent Kafka Python Protobuf Producer Encryption Example](https://github.com/confluentinc/confluent-kafka-python/blob/master/examples/protobuf_producer_encryption.py)
 - [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
-- [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [AWS CLI KMS Reference](https://docs.aws.amazon.com/cli/latest/reference/kms/)

@@ -43,9 +43,6 @@ print_step() {
 
 # Configuration folders
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TERRAFORM_DIR="$SCRIPT_DIR/terraform"
-
-print_info "Terraform Directory: $TERRAFORM_DIR"
 
 argument_list="--mode=<MODE>"
 
@@ -109,54 +106,85 @@ then
     aws sso login $AWS_PROFILE
     eval $(aws2-wrap $AWS_PROFILE --export)
     export AWS_REGION=$(aws configure get region $AWS_PROFILE)
+
+    # Get the current AWS account ID and caller ARN for the key policy
+    export AWS_ACCOUNT_ID=$(aws sts get-caller-identity $AWS_PROFILE --query "Account" --output text)
+    AWS_CALLER_ARN=$(aws sts get-caller-identity --query "Arn" --output text)
+    print_info "AWS Account ID: $AWS_ACCOUNT_ID"
+    print_info "AWS Caller ARN: $AWS_CALLER_ARN"
 fi
 
-# ── Terraform: provision the KMS KEK when CSFLE demo is selected ──────────
+# ── Provision the KMS KEK when CSFLE demo is selected ─────────────────────
 if [ "$demo" = "csfle" ] || [ "$demo" = "all" ]; then
     # Clean up any existing KMS resources from previous runs to ensure a clean slate for the demo
-    aws kms delete-alias --alias-name alias/confluent-csfle-kek --region $AWS_REGION || print_warn "KMS alias not found, skipping deletion"
+    aws kms delete-alias --alias-name alias/confluent-csfle-kek --region "$AWS_REGION" 2>/dev/null \
+        || print_warn "KMS alias not found, skipping deletion"
 
-    print_step "Provisioning KMS KEK via Terraform..."
+    print_step "Provisioning KMS KEK via AWS CLI..."
 
-    # Configuration folders
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    TERRAFORM_DIR="$SCRIPT_DIR/terraform"
+    # Build the KMS key policy with permissions for the current AWS account root and the caller ARN
+    KMS_KEY_POLICY=$(cat <<POLICY
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowRootAccountFullAccess",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::${AWS_ACCOUNT_ID}:root"
+            },
+            "Action": "kms:*",
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowCSFLEOperations",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "${AWS_CALLER_ARN}"
+            },
+            "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt",
+                "kms:GenerateDataKey",
+                "kms:DescribeKey"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+POLICY
+    )
 
-    print_info "Terraform Directory: $TERRAFORM_DIR"
+    # Create the KMS key
+    print_info "Creating KMS key..."
+    KMS_KEY_ID=$(aws kms create-key \
+        --description "KEK (Key Encryption Key) for Confluent CSFLE demo" \
+        --policy "$KMS_KEY_POLICY" \
+        --tags TagKey=Purpose,TagValue=confluent-csfle-kek TagKey=ManagedBy,TagValue=aws-cli \
+        --region "$AWS_REGION" \
+        --query "KeyMetadata.KeyId" \
+        --output text)
+    print_info "KMS Key ID: $KMS_KEY_ID"
 
-    cd "$TERRAFORM_DIR"
+    # Enable automatic key rotation
+    print_info "Enabling automatic key rotation..."
+    aws kms enable-key-rotation --key-id "$KMS_KEY_ID" --region "$AWS_REGION"
 
-    # UNCOMMENT WHEN YOU WANT TO USE A terraform.tfvars FILE INSTEAD OF ENVIRONMENT VARIABLES
-    # Create terraform.tfvars file with the required variables
-    # printf "aws_region=\"${AWS_REGION}\"\
-    # \naws_access_key_id=\"${AWS_ACCESS_KEY_ID}\"\
-    # \naws_secret_access_key=\"${AWS_SECRET_ACCESS_KEY}\"\
-    # \naws_session_token=\"${AWS_SESSION_TOKEN}\"" > terraform.tfvars
+    # Create the KMS alias
+    print_info "Creating KMS alias..."
+    aws kms create-alias \
+        --alias-name alias/confluent-csfle-kek \
+        --target-key-id "$KMS_KEY_ID" \
+        --region "$AWS_REGION"
 
-    # Export Terraform variables as environment variables
-    export TF_VAR_aws_region="${AWS_REGION}"
-    export TF_VAR_aws_access_key_id="${AWS_ACCESS_KEY_ID}"
-    export TF_VAR_aws_secret_access_key="${AWS_SECRET_ACCESS_KEY}"
-    export TF_VAR_aws_session_token="${AWS_SESSION_TOKEN}"
-
-    # Initialize Terraform
-    print_info "Initializing Terraform..."
-    terraform init
-
-    # Apply Terraform
-    print_info "Applying Terraform plan..."
-    terraform apply -auto-approve
-    print_info "Infrastructure deployed successfully!"
-
-    print_info "Creating the Terraform visualization..."
-    terraform graph | dot -Tpng > ../docs/images/terraform-visualization.png
-    print_info "Terraform visualization created at: ../docs/images/terraform-visualization.png"
-
-    # Export the KMS key ARN from Terraform output for the CSFLE demo
-    export AWS_KMS_KEY_ARN=$(terraform -chdir="$TERRAFORM_DIR" output -raw kms_key_arn)
+    # Export the KMS key ARN for the CSFLE demo
+    export AWS_KMS_KEY_ARN=$(aws kms describe-key \
+        --key-id "$KMS_KEY_ID" \
+        --region "$AWS_REGION" \
+        --query "KeyMetadata.Arn" \
+        --output text)
     print_info "AWS_KMS_KEY_ARN=${AWS_KMS_KEY_ARN}"
-
-    cd ..
+    print_info "KMS KEK provisioned successfully!"
 fi
 
 # Build the argument list for the demo script
