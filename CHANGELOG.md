@@ -11,6 +11,7 @@ The format is base on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), 
 ### Changed
 - Issue [`#49`](https://github.com/j3-signalroom/cc-python-dynamic_precompiled-protobuf-example/issues/49)
 - Issue [`#53`](https://github.com/j3-signalroom/cc-python-dynamic_precompiled-protobuf-example/issues/53)
+- Issue [`#58`](https://github.com/j3-signalroom/cc-python-dynamic_precompiled-protobuf-example/issues/58)
 
 ## [0.05.00.000] - 2026-03-15
 ### Changed
