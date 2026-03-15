@@ -49,9 +49,13 @@ Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the Ser
         + [2.1.8 Demo 8 — Subject Name Strategies (`--demo strategies`)](#218-demo-8--subject-name-strategies---demo-strategies)
         + [2.1.9 Demo 9 — Client-Side Field Level Encryption (`--demo csfle`)](#219-demo-9--client-side-field-level-encryption---demo-csfle)
         + [2.1.10 Demo 10 — Manual Schema Registration (`--demo no-auto-register`)](#2110-demo-10--manual-schema-registration---demo-no-auto-register)
-+ [3.0 Cleanup](#30-cleanup)
-+ [4.0 Notes](#40-notes)
-+ [5.0 Resources](#50-resources)
++ [3.0 Terraform — AWS KMS Provisioning](#30-terraform--aws-kms-provisioning)
+    + [3.1 What it provisions](#31-what-it-provisions)
+    + [3.2 Terraform files](#32-terraform-files)
+    + [3.3 How it is used](#33-how-it-is-used)
++ [4.0 Cleanup](#40-cleanup)
++ [5.0 Notes](#50-notes)
++ [6.0 Resources](#60-resources)
 <!-- tocstop -->
 
 ---
@@ -74,22 +78,30 @@ cc-python-dynamic_static-protobuf-example/
 │   ├── field_encryption.py          # FieldEncryptor & get_encrypted_fields() — AES-256-GCM CSFLE
 │   ├── demos.py                     # All ten demo functions (demo_basic … demo_no_auto_register)
 │   ├── main.py                      # Thin entry point — wires config, SR client, and demo dispatch
-│   └── generated_pb2/               # Auto-generated protoc stubs (gitignored, created by --use-protoc)
-├── schemas                          # Proto3 schema definitions (gitignored, used by --use-protoc)
-│   ├── MyRecord.proto               # Basic schema with import
-│   ├── other.proto                   # Referenced schema (OtherRecord)
-│   ├── AllTypes.proto                # OneOf wrapper (Customer + Product + Order)
-│   ├── Customer.proto                # Customer message
-│   ├── Product.proto                 # Product message
-│   ├── Order.proto                   # Order message
-│   ├── Payment.proto                 # Payment message (subject name strategies)
-│   ├── SensitiveRecord.proto         # CSFLE example with PII fields
-│   ├── ExampleMessage.proto          # General-purpose example
-│   ├── Invoice.proto                 # Manual registration example (no-auto-register demo)
-│   └── evolution
-│       ├── MyRecord_v1.proto         # Schema evolution v1 (id, amount)
-│       └── MyRecord_v2.proto         # Schema evolution v2 (+ customer_id)
-├── run-demo.sh                      # Shell script — authenticates via AWS SSO and runs all demos in `full` mode
+│   ├── schemas                      # Proto3 schema definitions (used by --use-protoc)
+│   │   ├── MyRecord.proto           # Basic schema with import
+│   │   ├── other.proto              # Referenced schema (OtherRecord)
+│   │   ├── AllTypes.proto           # OneOf wrapper (Customer + Product + Order)
+│   │   ├── Customer.proto           # Customer message
+│   │   ├── Product.proto            # Product message
+│   │   ├── Order.proto              # Order message
+│   │   ├── Payment.proto            # Payment message (subject name strategies)
+│   │   ├── SensitiveRecord.proto    # CSFLE example with PII fields
+│   │   ├── ExampleMessage.proto     # General-purpose example
+│   │   ├── Invoice.proto            # Manual registration example (no-auto-register demo)
+│   │   └── evolution
+│   │       ├── MyRecord_v1.proto    # Schema evolution v1 (id, amount)
+│   │       └── MyRecord_v2.proto    # Schema evolution v2 (+ customer_id)
+│   └── generated_pb2/              # Auto-generated protoc stubs (gitignored, created by --use-protoc)
+├── terraform                        # Infrastructure as Code — AWS KMS key provisioning for CSFLE
+│   ├── main.tf                      # KMS key + alias resources with IAM policy for CSFLE operations
+│   ├── providers.tf                 # AWS provider configuration (region, credentials)
+│   ├── variables.tf                 # AWS region, credentials, KMS key settings (alias, description, deletion window)
+│   ├── outputs.tf                   # Exports kms_key_arn, kms_key_id, kms_key_alias
+│   └── data.tf                      # aws_caller_identity data source
+├── docs
+│   └── images                       # Generated diagrams (e.g. Terraform visualization)
+├── run-demo.sh                      # Shell script — authenticates via AWS SSO, provisions KMS via Terraform, and runs demos
 ├── pyproject.toml                   # Project metadata, dependencies, logging
 ├── uv.lock                          # Pinned dependency lockfile — commit this
 ├── .env                             # Credentials — NOT COMMITTED, loaded automatically by python-dotenv at startup
@@ -100,7 +112,8 @@ cc-python-dynamic_static-protobuf-example/
 ├── KNOWNISSUES.pdf                  # Known issues in PDF format
 ├── LICENSE.md                       # License in Markdown format
 ├── LICENSE.pdf                      # License in PDF format
-└── README.md                        # This file — project overview, setup instructions, and documentation of all core concepts and classes
+├── README.md                        # This file — project overview, setup instructions, and documentation of all core concepts and classes
+└── README.pdf                       # README in PDF format
 ```
 
 ### **1.2 Architecture Overview**
@@ -126,7 +139,7 @@ flowchart TB
     %% ── CLI ────────────────────────────────────────────────────────────
     subgraph CLI["CLI  (main.py · utilities.py)"]
         direction LR
-        ARGS["parse_args()\n--mode  --demo  --run-id\n--save-schemas"]
+        ARGS["parse_args()\n--mode  --demo  --run-id\n--save-schemas  --use-protoc"]
         CFG["get_config()\nreads os.environ"]
         ARGS --> CFG
     end
@@ -270,10 +283,27 @@ flowchart TB
         D10["Demo 10 · Manual Registration\nauto_register=False\ninvoices-{run_id}"]
     end
 
+    %% ── Terraform ──────────────────────────────────────────────────────
+    subgraph TF["Terraform  (terraform/)"]
+        direction TB
+        TF_MAIN["main.tf\naws_kms_key · aws_kms_alias\nIAM policy for CSFLE"]
+        TF_PROV["providers.tf\nAWS provider v6.36.0"]
+        TF_VARS["variables.tf\naws_region · credentials\nkms_key_alias · deletion_window"]
+        TF_OUT["outputs.tf\nkms_key_arn · kms_key_id\nkms_key_alias"]
+        TF_PROV --> TF_MAIN
+        TF_VARS --> TF_MAIN
+        TF_MAIN --> TF_OUT
+    end
+
     %% ── Confluent Cloud ─────────────────────────────────────────────────
     subgraph CC["Confluent Cloud"]
         CC_SR["Schema Registry\nStream Governance\nEssentials / Advanced"]
         CC_KAFKA["Kafka Cluster\nSASL_SSL · PLAIN\nrf=3"]
+    end
+
+    %% ── AWS ──────────────────────────────────────────────────────────────
+    subgraph AWS["AWS"]
+        AWS_KMS["KMS\nKey Encryption Key (KEK)"]
     end
 
     %% ── Wiring ──────────────────────────────────────────────────────────
@@ -296,6 +326,9 @@ flowchart TB
     CSFLE_BOX --> SERDES
     CSFLE_BOX --> DEMOS
 
+    TF_OUT -->|"provisions"| AWS_KMS
+    CSFLE_BOX -->|"boto3"| AWS_KMS
+
     SRC  -->|"HTTPS REST"| CC_SR
     KAFKA_H -->|"SASL_SSL"| CC_KAFKA
 
@@ -316,6 +349,10 @@ flowchart TB
     classDef csfle    fill:#8b1a1a,color:#fff,stroke:#8b1a1a
     class CSFLE_BOX,FE,GEF csfle
     class SR_CSFLE,POST_TAG,POST_KEK,GET_KEK,POST_DEK,GET_DEK csfle
+    classDef tf        fill:#5c4ee5,color:#fff,stroke:#5c4ee5
+    class TF,TF_MAIN,TF_PROV,TF_VARS,TF_OUT tf
+    classDef aws       fill:#f09020,color:#fff,stroke:#f09020
+    class AWS,AWS_KMS aws
     classDef iface     fill:#4a4a4a,color:#fff,stroke:#4a4a4a
     class PROTO_IF,PSPROTO iface
 ```
@@ -370,14 +407,20 @@ into a local `.venv`. No manual `pip install` is needed.
 
 | Package | Minimum | Purpose |
 |---|---|---|
+| `attrs` | 25.4.0 | Data class utilities |
+| `authlib` | 1.6.9 | Authentication library |
 | `aws2-wrap` | 1.4.0 | AWS SSO credential wrapper used by `run-demo.sh` |
 | `boto3` | 1.38.0 | AWS KMS client for CSFLE DEK unwrapping |
-| `confluent-kafka` | 2.13.2 | Producer, Consumer, AdminClient (required for `--mode full` only) |
+| `cachetools` | 7.0.5 | In-process caching utilities |
+| `confluent-kafka[schemaregistry,protobuf]` | 2.13.2 | Producer, Consumer, AdminClient, Schema Registry, Protobuf SerDes (required for `--mode full` and `--demo csfle`) |
 | `cryptography` | 44.0.0 | AES-256-GCM encryption for Client-Side Field Level Encryption (CSFLE) |
-| `protobuf` | 7.34.0 | `google.protobuf` runtime (available for real binary encoding) |
-| `requests` | 2.32.5 | Schema Registry REST API calls |
-| `python-dotenv` | 1.2.2 | Auto-loads `.env` via `load_dotenv()` at startup |
 | `dotenv` | 0.9.9 | dotenv compatibility shim |
+| `googleapis-common-protos` | 1.56.1 | Common proto definitions (well-known types) |
+| `httpx` | 0.28.1 | Async HTTP client |
+| `protobuf` | 6.30.2 | `google.protobuf` runtime for real binary encoding (pinned `<7.0`) |
+| `python-dotenv` | 1.2.2 | Auto-loads `.env` via `load_dotenv()` at startup |
+| `requests` | 2.32.5 | Schema Registry REST API calls |
+| `tink` | 1.14.1 | Google Tink cryptographic library |
 
 > `confluent-kafka` is imported inside a `try/except` at startup; if it is
 > absent the app still runs normally in `--mode schema-only`.
@@ -401,6 +444,12 @@ SR_API_SECRET=your_sr_api_secret
 
 # AWS KMS — required for --demo csfle (or --demo all)
 AWS_KMS_KEY_ARN=arn:aws:kms:us-east-1:123456789012:key/your-key-id
+
+# AWS credentials — required for CSFLE (auto-populated by run-demo.sh when using --profile)
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+AWS_SESSION_TOKEN=your_aws_session_token          # optional, needed for SSO/temporary credentials
 ```
 
 `python-dotenv` loads this automatically at module startup via `load_dotenv()`;
@@ -415,7 +464,7 @@ no `--env-file` flag is needed.
 | Kafka cluster | Any type — Basic, Standard, Dedicated, or Enterprise |
 | Kafka API key | `DeveloperRead` + `DeveloperWrite` on the cluster |
 | AWS KMS key | Symmetric encrypt/decrypt key — required for `--demo csfle` |
-| AWS credentials | `boto3`-compatible auth (env vars, `~/.aws/credentials`, IAM role, or AWS SSO — see `run-all-demos.sh`) |
+| AWS credentials | `boto3`-compatible auth (env vars, `~/.aws/credentials`, IAM role, or AWS SSO — see `run-demo.sh`) |
 
 ---
 
@@ -849,7 +898,52 @@ schema governance).
 
 ---
 
-## **3.0 Cleanup**
+## **3.0 Terraform — AWS KMS Provisioning**
+
+The `terraform/` directory contains Infrastructure as Code that provisions the AWS KMS key used as the Key Encryption Key (KEK) for the CSFLE demo. The configuration uses **Terraform Cloud** (organization: `signalroom`, workspace: `cc-python-dynamic-static-protobuf-example`) for remote state management.
+
+### **3.1 What it provisions**
+
+| Resource | Purpose |
+|---|---|
+| `aws_kms_key.csfle_kek` | Symmetric KMS key for encrypting/decrypting Data Encryption Keys (DEKs). Key rotation enabled. IAM policy grants the calling identity `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey`. |
+| `aws_kms_alias.csfle_kek` | Alias `alias/confluent-csfle-kek` for the KMS key |
+
+### **3.2 Terraform files**
+
+| File | Purpose |
+|---|---|
+| `main.tf` | Terraform Cloud backend config, required providers (AWS `6.36.0`), `aws_kms_key` and `aws_kms_alias` resources |
+| `providers.tf` | AWS provider configuration (region, access key, secret key, session token) |
+| `variables.tf` | Input variables: `aws_region`, `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `kms_key_alias`, `kms_key_description`, `kms_key_deletion_window` |
+| `outputs.tf` | Exports `kms_key_arn`, `kms_key_id`, and `kms_key_alias` |
+| `data.tf` | `aws_caller_identity` data source for dynamic IAM policy principal |
+
+### **3.3 How it is used**
+
+When `run-demo.sh` is invoked with `--demo=csfle` or `--demo=all`, the script automatically:
+
+1. Authenticates to AWS SSO (if `--profile` is provided)
+2. Exports AWS credentials as `TF_VAR_*` environment variables
+3. Runs `terraform init` and `terraform apply -auto-approve` in `terraform/`
+4. Captures the KMS key ARN from `terraform output -raw kms_key_arn` and exports it as `AWS_KMS_KEY_ARN`
+5. Generates a Terraform graph visualization at `docs/images/terraform-visualization.png`
+
+You can also provision the KMS key manually:
+
+```bash
+cd terraform
+export TF_VAR_aws_region="us-east-1"
+export TF_VAR_aws_access_key_id="$AWS_ACCESS_KEY_ID"
+export TF_VAR_aws_secret_access_key="$AWS_SECRET_ACCESS_KEY"
+export TF_VAR_aws_session_token="$AWS_SESSION_TOKEN"   # if using SSO
+terraform init
+terraform apply
+```
+
+---
+
+## **4.0 Cleanup**
 
 Since all topics and subjects are suffixed with `<run_id>`, to remove everything a
 specific run created, follow these steps:
@@ -868,7 +962,7 @@ done
 
 ---
 
-## **4.0 Notes**
+## **5.0 Notes**
 
 - **No standalone SR Python library.** There is no `confluent-schema-registry`
   PyPI package. `SchemaRegistryClient` calls the REST API directly via
@@ -888,9 +982,14 @@ done
   the `ProtoSchema` protocol and are interchangeable in the SerDes layer.
   `json_format.ParseDict` / `MessageToDict` bridge between plain Python dicts
   and `google.protobuf.Message` instances in both modes.
+- **Terraform Cloud remote state.** The `terraform/` configuration uses
+  Terraform Cloud (organization `signalroom`) for state storage. If you want
+  to use local state instead, remove the `cloud {}` block from `main.tf`.
 
-## **5.0 Resources**
+## **6.0 Resources**
 - [Confluent Protobuf SerDes documentation](https://docs.confluent.io/cloud/current/sr/fundamentals/serdes-develop/serdes-protobuf.html)
 - [Protocol Buffers (or Protobuf for short) documentation](https://developers.google.com/protocol-buffers/docs/overview)
 - [Protect Sensitive Data Using Client-Side Field Level Encryption on Confluent Cloud](https://docs.confluent.io/cloud/current/security/encrypt/csfle/overview.html#protect-sensitive-data-using-client-side-field-level-encryption-on-ccloud)
 - [Confluent Kafka Python Protobuf Producer Encryption Example](https://github.com/confluentinc/confluent-kafka-python/blob/master/examples/protobuf_producer_encryption.py)
+- [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
+- [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
