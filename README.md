@@ -18,6 +18,7 @@ Both modes satisfy the `ProtoSchema` protocol and are interchangeable in the Ser
     + [1.3 Requirements](#13-requirements)
         - [1.3.1 Install uv](#131-install-uv)
             + [1.3.1.1 Special mention](#1311-special-mention)
+        - [1.3.2 Install protoc (only for `--use-protoc`)](#132-install-protoc-only-for---use-protoc)
     + [1.4 Setup](#14-setup)
     + [1.5 Dependencies](#15-dependencies)
     + [1.6 Configuration](#16-configuration)
@@ -363,6 +364,49 @@ So what does this mean when we put `uv run` before `python`? It means `uv` takes
 Curious to learn more about [Astral](https://astral.sh/)'s `uv`? Check these out:
 - Documentation: Learn about [`uv`](https://docs.astral.sh/uv/).
 - Video: [`uv` IS THE FUTURE OF PYTHON PACKING!](https://www.youtube.com/watch?v=8UuW8o4bHbw)
+
+#### **1.3.2 Install protoc (only for `--use-protoc`)**
+
+The `--use-protoc` flag compiles `.proto` files into `_pb2.py` stubs using the Protocol Buffer compiler (`protoc`). If you only use the default **dynamic** mode, you can skip this step — `protoc` is not required.
+
+**macOS (Homebrew)**
+
+```bash
+brew install protobuf
+```
+
+**Linux (apt)**
+
+```bash
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y protobuf-compiler
+```
+
+**Linux (dnf)**
+
+```bash
+# Fedora / RHEL
+sudo dnf install -y protobuf-compiler
+```
+
+**Manual install (any OS)**
+
+Download a prebuilt binary from the [protobuf releases page](https://github.com/protocolbuffers/protobuf/releases), extract it, and add the `bin/` directory to your `PATH`:
+
+```bash
+# Example for Linux x86_64 (adjust version as needed)
+PB_VERSION="29.3"
+curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PB_VERSION}/protoc-${PB_VERSION}-linux-x86_64.zip"
+unzip "protoc-${PB_VERSION}-linux-x86_64.zip" -d "$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Verify the installation:
+
+```bash
+protoc --version
+# libprotoc 29.3  (or similar)
+```
 
 ---
 
@@ -950,3 +994,4 @@ done
 - [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
 - [AWS CLI KMS Reference](https://docs.aws.amazon.com/cli/latest/reference/kms/)
 - [Google Tink documentation](https://developers.google.com/tink)
+- [GitHub protobuf repo](https://github.com/protocolbuffers/protobuf)
