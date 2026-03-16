@@ -73,7 +73,7 @@ cc-python-dynamic_precompiled-protobuf-examples/
 │   ├── compiled_protobuf_helpers.py # CompiledProtoMessage, compile_protos(), load_compiled_message() — protoc stubs
 │   ├── custom_protobuf_serdes.py    # CustomProtobufSerializer & CustomProtobufDeserializer
 │   ├── kafka_helpers.py             # ensure_topics(), kafka_produce(), kafka_consume_one()
-│   ├── examples.py                     # All ten demo functions (example_basic … example_no_auto_register)
+│   ├── examples.py                  # All ten demo functions (example_basic … example_no_auto_register)
 │   ├── main.py                      # Thin entry point — wires config, SR client, and example dispatch
 │   ├── schemas                      # Proto3 schema definitions (used by --use-protoc)
 │   │   ├── MyRecord.proto           # Basic schema with import
@@ -92,7 +92,7 @@ cc-python-dynamic_precompiled-protobuf-examples/
 │   └── generated_pb2/               # Auto-generated protoc stubs (gitignored, created by --use-protoc)
 ├── docs
 │   └── images                       # Generated diagrams
-├── run-example.sh                      # Shell script — authenticates via AWS SSO, provisions KMS via AWS CLI, and runs examples
+├── run-example.sh                   # Shell script — authenticates via AWS SSO, provisions KMS via AWS CLI, and runs examples
 ├── pyproject.toml                   # Project metadata, dependencies, logging
 ├── uv.lock                          # Pinned dependency lockfile — commit this
 ├── .env                             # Credentials — NOT COMMITTED, loaded automatically by python-dotenv at startup
